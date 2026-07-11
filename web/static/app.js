@@ -26,10 +26,38 @@
     if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
     return data;
   }
-  function toast(msg) {
+    function ensureToastHost() {
+    let host = document.getElementById("toast-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "toast-host";
+      host.setAttribute("aria-live", "polite");
+      document.body.appendChild(host);
+    }
+    return host;
+  }
+  function popupToast(msg, type = "ok", title = "") {
+    const host = ensureToastHost();
+    const el = document.createElement("div");
+    el.className = "toast-item " + (type === "err" ? "err" : "ok");
+    const t = title || (type === "err" ? "??" : "??");
+    el.innerHTML = '<div class="toast-title"></div><div class="toast-msg"></div>';
+    el.querySelector(".toast-title").textContent = t;
+    el.querySelector(".toast-msg").textContent = String(msg || "");
+    host.appendChild(el);
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transition = "opacity .2s";
+      setTimeout(() => el.remove(), 220);
+    }, type === "err" ? 4500 : 2800);
+  }
+  function toast(msg, type = "ok", title = "") {
+    // always popup
+    popupToast(msg, type, title);
+    // also append to log if present
     const log = document.getElementById("log");
     if (log) {
-      log.textContent += (log.textContent ? "\n" : "") + `[ui] ${msg}`;
+      log.textContent += (log.textContent ? "\n" : "") + "[ui] " + msg;
       log.scrollTop = log.scrollHeight;
     }
   }
@@ -261,10 +289,10 @@
     try {
       const config = JSON.parse(document.getElementById("config-editor").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config }) });
-      toast(__S.cfg_saved);
+      toast(__S.cfg_saved, "ok", "????");
       refreshStatus();
       refreshConfig();
-    } catch (err) { toast(__S.save_fail + ": " + (err.message || err)); }
+    } catch (err) { toast(__S.save_fail + ": " + (err.message || err), "err", "????"); }
   });
 
   document.getElementById("btn-save-cpa")?.addEventListener("click", async () => {
@@ -282,20 +310,20 @@
       };
       if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });
-      toast("CPA " + __S.cfg_saved);
+      toast("CPA " + __S.cfg_saved, "ok", "????");
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err)); }
+    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err), "err", "????"); }
   });
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {
     try {
       const patch = collectQuickConfig();
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
-      toast(__S.quick_saved);
+      toast(__S.quick_saved, "ok", "????");
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err)); }
+    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err), "err", "????"); }
   });
 
   document.getElementById("form-settings").addEventListener("submit", async (e) => {
@@ -310,10 +338,10 @@
       const res = await api("/api/settings", { method: "PUT", body: JSON.stringify(body) });
       if (body.web_token) setToken(body.web_token);
       document.getElementById("set-token").value = "";
-      toast(res.token_changed ? __S.set_saved_token : __S.set_saved);
+      toast(res.token_changed ? __S.set_saved_token : __S.set_saved, "ok", "????");
       await refreshSettings();
       applyNovncUrl(res.settings.novnc_url);
-    } catch (err) { toast(__S.set_fail + ": " + (err.message || err)); }
+    } catch (err) { toast(__S.set_fail + ": " + (err.message || err), "err", "????"); }
   });
 
   document.getElementById("btn-logout").addEventListener("click", async () => {

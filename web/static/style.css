@@ -239,3 +239,47 @@ label .field-key + input,
 label .field-key + select {
   margin-top: 0;
 }
+
+#toast-host {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.toast-item {
+  pointer-events: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #121c33;
+  color: var(--text);
+  box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  animation: toast-in .18s ease-out;
+}
+.toast-item.ok {
+  border-color: rgba(62,207,142,.45);
+  background: linear-gradient(180deg, #123024, #0f1a28);
+}
+.toast-item.err {
+  border-color: rgba(255,93,108,.5);
+  background: linear-gradient(180deg, #3a1520, #1a1020);
+}
+.toast-item .toast-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.toast-item .toast-msg {
+  color: #d5def5;
+  word-break: break-word;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
