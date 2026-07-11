@@ -1,4 +1,4 @@
-﻿"""Grok Register web dashboard - job control, logs, accounts, config, noVNC link."""
+"""Grok Register web dashboard - job control, logs, accounts, config, noVNC link."""
 from __future__ import annotations
 
 import argparse

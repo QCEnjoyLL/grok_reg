@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   const needToken = window.__NEED_TOKEN__ === true || window.__NEED_TOKEN__ === "true";
   const novncPort = window.__NOVNC_PORT__ || "6080";
 
