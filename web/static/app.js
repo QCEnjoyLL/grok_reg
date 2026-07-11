@@ -99,7 +99,7 @@
     if (box && st.setup_hints) {
       if (st.setup_hints.length) {
         box.hidden = false;
-        box.innerHTML = "<strong>??????</strong> " + st.setup_hints.map(esc).join(" ? ");
+        box.innerHTML = "<strong>运行前检查：</strong> " + st.setup_hints.map(esc).join(" ? ");
       } else {
         box.hidden = true;
       }
@@ -111,26 +111,26 @@
     const data = await api("/api/accounts?limit=50");
     const box = document.getElementById("accounts-table");
     if (!data.items || !data.items.length) {
-      box.innerHTML = "<p class='hint'>????</p>";
+      box.innerHTML = "<p class='hint'>暂无账号</p>";
       return;
     }
     const rows = data.items
       .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? "?" : "-"}</td></tr>`)
       .join("");
-    box.innerHTML = `<table><thead><tr><th>??</th><th>??</th><th>SSO</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.innerHTML = `<table><thead><tr><th>邮箱</th><th>密码</th><th>SSO</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   async function refreshCpa() {
     const data = await api("/api/cpa?limit=50");
     const box = document.getElementById("cpa-table");
     if (!data.items || !data.items.length) {
-      box.innerHTML = "<p class='hint'>?? xai-*.json</p>";
+      box.innerHTML = "<p class='hint'>暂无 xai-*.json</p>";
       return;
     }
     const rows = data.items
       .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td></tr>`)
       .join("");
-    box.innerHTML = `<table><thead><tr><th>??</th><th>mtime</th><th>size</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.innerHTML = `<table><thead><tr><th>邮箱</th><th>mtime</th><th>size</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   async function refreshConfig() {
@@ -173,7 +173,7 @@
     };
     try {
       await api("/api/jobs/register", { method: "POST", body: JSON.stringify(body) });
-      toast("???????");
+      toast("注册任务已启动");
       refreshStatus();
     } catch (err) {
       toast(String(err.message || err));
@@ -192,7 +192,7 @@
     };
     try {
       await api("/api/jobs/backfill", { method: "POST", body: JSON.stringify(body) });
-      toast("Backfill ???");
+      toast("Backfill 已启动");
       refreshStatus();
     } catch (err) {
       toast(String(err.message || err));
@@ -202,7 +202,7 @@
   document.getElementById("btn-stop").addEventListener("click", async () => {
     try {
       await api("/api/jobs/stop", { method: "POST", body: "{}" });
-      toast("?????");
+      toast("已请求停止");
     } catch (err) {
       toast(String(err.message || err));
     }
@@ -224,10 +224,10 @@
     try {
       const config = JSON.parse(document.getElementById("config-editor").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config }) });
-      toast("?????");
+      toast("配置已保存");
       refreshStatus();
     } catch (err) {
-      toast("????: " + (err.message || err));
+      toast("保存失败: " + (err.message || err));
     }
   });
 
@@ -243,11 +243,11 @@
       const res = await api("/api/settings", { method: "PUT", body: JSON.stringify(body) });
       if (body.web_token) setToken(body.web_token);
       document.getElementById("set-token").value = "";
-      toast(res.token_changed ? "??????Token ????" : "?????");
+      toast(res.token_changed ? "设置已保存（Token 已更新）" : "设置已保存");
       await refreshSettings();
       applyNovncUrl(res.settings.novnc_url);
     } catch (err) {
-      toast("??????: " + (err.message || err));
+      toast("设置保存失败: " + (err.message || err));
     }
   });
 

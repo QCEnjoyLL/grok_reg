@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ title }} ? ??</title>
+  <title>{{ title }} - 登录</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="login-body">
@@ -12,16 +13,16 @@
       <span class="logo">G</span>
       <div>
         <h1>{{ title }}</h1>
-        <p class="sub">????? Token?????????</p>
+        <p class="sub">请输入访问 Token（相当于登录密码）</p>
       </div>
     </div>
     <form id="login-form" class="form">
       <label>Token
-        <input type="password" id="login-token" name="token" autocomplete="current-password" placeholder="?? change-me???????" required />
+        <input type="password" id="login-token" name="token" autocomplete="current-password" placeholder="默认 change-me，可在后台修改" required />
       </label>
-      <button type="submit" class="btn primary" style="width:100%">????</button>
+      <button type="submit" class="btn primary" style="width:100%">进入后台</button>
       <p id="login-error" class="error" hidden></p>
-      <p class="hint">Token ?????? <code>-e WEB_TOKEN=...</code>???????????????? <code>/data/ui_settings.json</code>?</p>
+      <p class="hint">Token 来自启动参数 <code>-e WEB_TOKEN=...</code>，或后台「系统设置」修改后写入 <code>/data/ui_settings.json</code>.。</p>
     </form>
   </div>
   <script>
@@ -38,7 +39,7 @@
           body: JSON.stringify({ token }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || "????");
+        if (!res.ok) throw new Error(data.detail || "登录失败");
         localStorage.setItem("web_token", token);
         location.href = "/";
       } catch (ex) {

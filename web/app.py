@@ -89,7 +89,7 @@ def set_web_token(token: str) -> None:
     global _runtime_token
     token = (token or "").strip()
     if not token:
-        raise ValueError("token ????")
+        raise ValueError("token 不能为空")
     with _token_lock:
         _runtime_token = token
     s = _load_ui_settings()
@@ -191,7 +191,7 @@ class JobManager:
 
     def _parse_stats(self, line: str) -> None:
         m = re.search(
-            r"????\s*(\d+).*????\s*(\d+).*CPA??\s*(\d+).*CPA??\s*(\d+).*CPA??\s*(\d+)",
+            r"注册成功\s*(\d+).*注册失败\s*(\d+).*CPA成功\s*(\d+).*CPA失败\s*(\d+).*CPA跳过\s*(\d+)",
             line,
         )
         if m:
@@ -237,7 +237,7 @@ class JobManager:
     def start(self, kind: str, cmd: list[str], env: dict[str, str] | None = None) -> None:
         with self._lock:
             if self.proc is not None and self.proc.poll() is None:
-                raise RuntimeError("????????????")
+                raise RuntimeError("已有任务在运行，请先停止")
             run_env = os.environ.copy()
             if env:
                 run_env.update(env)
@@ -322,7 +322,7 @@ def _token_ok(got: str) -> bool:
 
 def require_auth(request: Request) -> None:
     if not _token_ok(_extract_token(request)):
-        raise HTTPException(status_code=401, detail="???? Token ??")
+        raise HTTPException(status_code=401, detail="未登录或 Token 错误")
 
 
 @app.middleware("http")
@@ -404,7 +404,7 @@ def api_login(body: LoginBody):
     if not _token_ok(token):
         # allow bootstrap if settings empty? no - compare runtime
         if token != get_web_token():
-            raise HTTPException(401, "Token ??")
+            raise HTTPException(401, "Token 错误")
     resp = JSONResponse({"ok": True})
     # cookie for page navigations; 30 days
     resp.set_cookie(
@@ -544,22 +544,22 @@ def _setup_hints(cfg: dict[str, Any]) -> list[str]:
     provider = str(cfg.get("email_provider") or "")
     if provider == "cloudflare":
         if not cfg.get("cloudflare_api_base") or "example.com" in str(cfg.get("cloudflare_api_base") or "") or str(cfg.get("cloudflare_api_base") or "").endswith("xxxx"):
-            hints.append("??? cloudflare_api_base????? Worker?")
+            hints.append("请配置 cloudflare_api_base（临时邮箱 Worker）")
         if not cfg.get("defaultDomains") or cfg.get("defaultDomains") in ("example.com", "xx.shop"):
-            hints.append("??? defaultDomains ???????")
+            hints.append("请配置 defaultDomains 为真实可用域名")
     elif provider == "cloudmail":
         if not cfg.get("cloudmail_url"):
-            hints.append("??? cloudmail_url")
+            hints.append("请配置 cloudmail_url")
     else:
         if not provider:
-            hints.append("??? email_provider?cloudflare/cloudmail/duckmail/yyds?")
+            hints.append("请设置 email_provider（cloudflare/cloudmail/duckmail/yyds）")
     proxy = str(cfg.get("proxy") or "")
     if not proxy or proxy in ("http://127.0.0.1:7890",):
-        hints.append("???? proxy ??????????")
+        hints.append("建议配置 proxy 为服务器可访问的代理")
     if cfg.get("cpa_export_enabled", True) and cfg.get("cpa_headless", False):
-        hints.append("cpa_headless ?? false???? Xvfb ???")
+        hints.append("cpa_headless 建议 false（容器内 Xvfb 有头）")
     if not hints:
-        hints.append("??????????????? 1 ????")
+        hints.append("关键配置看起来已填，可尝试注册 1 个号验证")
     return hints
 
 
@@ -737,7 +737,7 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
 def api_job_register(body: RegisterBody, request: Request):
     require_auth(request)
     if jobs.is_running():
-        raise HTTPException(409, "?????")
+        raise HTTPException(409, "任务运行中")
     cmd = [
         sys.executable,
         "-u",
@@ -763,7 +763,7 @@ def api_job_register(body: RegisterBody, request: Request):
 def api_job_backfill(body: BackfillBody, request: Request):
     require_auth(request)
     if jobs.is_running():
-        raise HTTPException(409, "?????")
+        raise HTTPException(409, "任务运行中")
     script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
     cmd = [
         sys.executable,
