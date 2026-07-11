@@ -553,12 +553,20 @@ def _setup_hints(cfg: dict[str, Any]) -> list[str]:
             "your-temp-mail",
             "yourdomain",
             "xxxx",
+            "your_api_key",
             "127.0.0.1:7890",
             "localhost",
         )
         return any(t in v for t in bad_tokens)
 
-    if provider == "cloudflare":
+    if provider in ("moemail", "nloln", "mail_nloln"):
+        if _is_placeholder(str(cfg.get("moemail_api_key") or "")):
+            hints.append('还差第1项：MoeMail API Key (moemail_api_key)')
+        # domain optional if API returns domains
+        base = str(cfg.get("moemail_api_base") or "https://mail.nloln.cn")
+        if _is_placeholder(base):
+            hints.append('还差 MoeMail API 地址 moemail_api_base')
+    elif provider == "cloudflare":
         base = str(cfg.get("cloudflare_api_base") or "")
         if _is_placeholder(base):
             hints.append('还差第1项：临时邮箱 Worker 地址 cloudflare_api_base')
@@ -568,18 +576,16 @@ def _setup_hints(cfg: dict[str, Any]) -> list[str]:
     elif provider == "cloudmail":
         if _is_placeholder(str(cfg.get("cloudmail_url") or "")):
             hints.append('还差 CloudMail 地址 cloudmail_url')
-    elif not provider:
-        hints.append('请选择邮箱提供商 email_provider')
 
     proxy = str(cfg.get("proxy") or "")
     if _is_placeholder(proxy) or proxy in ("http://127.0.0.1:7890",):
-        hints.append('还差第3项：服务器可访问的 proxy 代理')
+        hints.append('还差第3项：服务器可访问的 proxy')
 
     if cfg.get("cpa_export_enabled", True) and bool(cfg.get("cpa_headless", False)):
-        hints.append('建议 CPA headless=false（容器有头更稳）')
+        hints.append('建议 CPA headless=false')
 
     if not hints:
-        hints.append('三项关键配置看起来可用，可以开始注册 1 个号试试')
+        hints.append('关键配置看起来可用，可以开始注册 1 个号试试')
     return hints
 
 

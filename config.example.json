@@ -3,9 +3,9 @@
   "//_paths": "相对路径相对 grok_reg 目录；CPA 相关绝对路径更清晰。",
   "// ===== 邮箱：注册验证码来源 =====": "",
   "// email_provider": "cloudmail | cloudflare | duckmail | yyds。推荐自建 cloudmail。",
-  "email_provider": "cloudflare",
+  "email_provider": "moemail",
   "// defaultDomains": "注册用邮箱域名，逗号分隔；cloudmail catch-all 域名写这里。",
-  "defaultDomains": "example.com",
+  "defaultDomains": "moemail.app",
   "// cloudmail_url": "CloudMail 管理端根 URL，如 https://mail.example.com",
   "cloudmail_url": "https://mail.example.com",
   "// cloudmail_admin_email": "CloudMail 管理员邮箱",
@@ -138,5 +138,8 @@
   "// cpa_mint_browser_reuse": "mint worker 复用 Chromium（清会话）而非每号 cold start",
   "cpa_mint_browser_reuse": true,
   "// cpa_mint_browser_recycle_every": "mint 浏览器每成功 N 次后完整重启；0=仅出错时重启",
-  "cpa_mint_browser_recycle_every": 15
+  "cpa_mint_browser_recycle_every": 15,
+  "moemail_api_base": "https://mail.nloln.cn",
+  "moemail_api_key": "",
+  "moemail_expiry_ms": 3600000
 }

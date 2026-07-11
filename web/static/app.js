@@ -91,7 +91,9 @@
   }
   function fillQuickFromConfig(cfg) {
     if (!cfg) return;
-    setVal("q-email_provider", cfg.email_provider || "cloudflare");
+    setVal("q-email_provider", cfg.email_provider || "moemail");
+    setVal("q-moemail_api_base", cfg.moemail_api_base || "https://mail.nloln.cn");
+    setVal("q-moemail_api_key", cfg.moemail_api_key || "");
     setVal("q-defaultDomains", cfg.defaultDomains || "");
     setVal("q-cloudflare_api_base", cfg.cloudflare_api_base || "");
     setVal("q-cloudflare_api_key", cfg.cloudflare_api_key || "");
@@ -112,7 +114,8 @@
   function collectQuickConfig() {
     const bool = (v) => v === "true" || v === true;
     const out = {
-      email_provider: getVal("q-email_provider") || "cloudflare",
+      email_provider: getVal("q-email_provider") || "moemail",
+      moemail_api_base: getVal("q-moemail_api_base") || "https://mail.nloln.cn",
       defaultDomains: getVal("q-defaultDomains"),
       cloudflare_api_base: getVal("q-cloudflare_api_base"),
       cloudflare_auth_mode: getVal("q-cloudflare_auth_mode") || "x-admin-auth",
@@ -128,6 +131,8 @@
       cloudmail_url: getVal("q-cloudmail_url"),
       cloudmail_admin_email: getVal("q-cloudmail_admin_email"),
     };
+    const mkey = getVal("q-moemail_api_key");
+    if (mkey && !mkey.includes("*")) out.moemail_api_key = mkey;
     const key = getVal("q-cloudflare_api_key");
     if (key && !key.includes("*")) out.cloudflare_api_key = key;
     const cmp = getVal("q-cloudmail_password");

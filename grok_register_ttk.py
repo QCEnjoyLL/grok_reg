@@ -57,6 +57,9 @@ DEFAULT_CONFIG = {
     "cloudmail_url": "",
     "cloudmail_admin_email": "",
     "cloudmail_password": "",
+    "moemail_api_base": "https://mail.nloln.cn",
+    "moemail_api_key": "",
+    "moemail_expiry_ms": 3600000,
 }
 
 config = DEFAULT_CONFIG.copy()
@@ -1416,12 +1419,322 @@ def cloudmail_get_oai_code(
 
 # ──────────────────────── 公共邮箱工具 ────────────────────────
 
+
+# ???????????????????????? MoeMail / mail.nloln.cn ????????????????????????
+def get_moemail_api_base():
+    return str(
+        os.environ.get("MOEMAIL_API_BASE")
+        or config.get("moemail_api_base")
+        or "https://mail.nloln.cn"
+    ).rstrip("/")
+
+
+def get_moemail_api_key():
+    return str(os.environ.get("MOEMAIL_API_KEY") or config.get("moemail_api_key") or "").strip()
+
+
+def moemail_headers(content_type=False):
+    key = get_moemail_api_key()
+    if not key:
+        raise Exception("MoeMail ???? moemail_api_key?X-API-Key?")
+    headers = {"X-API-Key": key, "Accept": "application/json"}
+    if content_type:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+def moemail_get_config():
+    """GET /api/config -> domains and system settings."""
+    base = get_moemail_api_base()
+    resp = http_get(f"{base}/api/config", headers=moemail_headers())
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except Exception:
+        raise Exception(f"MoeMail /api/config ???JSON: {resp.text[:300]}")
+    return data if isinstance(data, dict) else {"raw": data}
+
+
+def moemail_pick_domain(preferred=""):
+    global _cf_domain_index
+    preferred = str(preferred or "").strip()
+    raw = str(config.get("defaultDomains", "") or "")
+    configured = [x.strip() for x in re.split(r"[,?\s]+", raw) if x.strip()]
+    if preferred:
+        return preferred
+    if configured:
+        d = configured[_cf_domain_index % len(configured)]
+        _cf_domain_index += 1
+        return d
+    # fallback: ask API
+    try:
+        data = moemail_get_config()
+        domains = (
+            data.get("domains")
+            or data.get("emailDomains")
+            or data.get("availableDomains")
+            or data.get("data")
+            or []
+        )
+        if isinstance(domains, dict):
+            domains = domains.get("domains") or domains.get("list") or []
+        if isinstance(domains, list) and domains:
+            out = []
+            for item in domains:
+                if isinstance(item, str) and item.strip():
+                    out.append(item.strip())
+                elif isinstance(item, dict):
+                    val = item.get("domain") or item.get("name") or item.get("value")
+                    if val:
+                        out.append(str(val).strip())
+            if out:
+                d = out[_cf_domain_index % len(out)]
+                _cf_domain_index += 1
+                return d
+    except Exception:
+        pass
+    raise Exception("MoeMail ??? defaultDomains?? /api/config ???????")
+
+
+def moemail_generate_email(name=None, domain=None, expiry_ms=None):
+    """POST /api/emails/generate -> address + emailId token."""
+    base = get_moemail_api_base()
+    domain = moemail_pick_domain(domain or "")
+    if expiry_ms is None:
+        try:
+            expiry_ms = int(config.get("moemail_expiry_ms", 3600000) or 3600000)
+        except Exception:
+            expiry_ms = 3600000
+    payload = {
+        "name": name or generate_username(10),
+        "expiryTime": expiry_ms,
+        "domain": domain,
+    }
+    resp = http_post(
+        f"{base}/api/emails/generate",
+        json=payload,
+        headers=moemail_headers(content_type=True),
+    )
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except Exception:
+        raise Exception(f"MoeMail generate ???JSON: {resp.text[:300]}")
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        data = data["data"]
+    if not isinstance(data, dict):
+        raise Exception(f"MoeMail generate ????: {data}")
+
+    email_id = (
+        data.get("id")
+        or data.get("emailId")
+        or data.get("email_id")
+        or data.get("_id")
+    )
+    address = (
+        data.get("address")
+        or data.get("email")
+        or data.get("emailAddress")
+        or data.get("fullAddress")
+    )
+    if not address:
+        local = data.get("name") or payload["name"]
+        if local and domain:
+            address = f"{local}@{domain}"
+    if not address or not email_id:
+        raise Exception(f"MoeMail generate ?? address/id: {data}")
+    # dev_token ?? emailId??????
+    return str(address), f"moemail:{email_id}"
+
+
+def moemail_list_messages(email_id, cursor=None):
+    """GET /api/emails/{emailId}?cursor=..."""
+    base = get_moemail_api_base()
+    params = {}
+    if cursor:
+        params["cursor"] = cursor
+    resp = http_get(
+        f"{base}/api/emails/{email_id}",
+        headers=moemail_headers(),
+        params=params or None,
+    )
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except Exception:
+        raise Exception(f"MoeMail ?????JSON: {resp.text[:300]}")
+    return data
+
+
+def moemail_get_message(email_id, message_id):
+    """GET /api/emails/{emailId}/{messageId}"""
+    base = get_moemail_api_base()
+    resp = http_get(
+        f"{base}/api/emails/{email_id}/{message_id}",
+        headers=moemail_headers(),
+    )
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except Exception:
+        raise Exception(f"MoeMail ?????JSON: {resp.text[:300]}")
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        return data["data"]
+    return data
+
+
+def _moemail_extract_messages(payload):
+    """Normalize various list response shapes to a list of message dicts."""
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("messages", "mails", "items", "results", "list", "data"):
+        val = payload.get(key)
+        if isinstance(val, list):
+            return [x for x in val if isinstance(x, dict)]
+        if isinstance(val, dict):
+            for k2 in ("messages", "mails", "items", "list"):
+                if isinstance(val.get(k2), list):
+                    return [x for x in val[k2] if isinstance(x, dict)]
+    # sometimes email object embeds messages
+    if isinstance(payload.get("email"), dict):
+        return _moemail_extract_messages(payload["email"])
+    return []
+
+
+def _moemail_message_text(msg):
+    parts = []
+    if not isinstance(msg, dict):
+        return ""
+    for field in (
+        "text",
+        "raw",
+        "content",
+        "intro",
+        "body",
+        "snippet",
+        "html",
+        "textContent",
+        "htmlContent",
+        "message",
+    ):
+        value = msg.get(field)
+        if isinstance(value, str) and value.strip():
+            if field in ("html", "htmlContent"):
+                parts.append(re.sub(r"<[^>]+>", " ", value))
+            else:
+                parts.append(value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    parts.append(re.sub(r"<[^>]+>", " ", item) if "html" in field.lower() else item)
+    subject = str(msg.get("subject", "") or "")
+    if subject:
+        parts.insert(0, subject)
+    return "\n".join(parts)
+
+
+def moemail_get_oai_code(
+    dev_token,
+    email,
+    timeout=180,
+    poll_interval=3,
+    log_callback=None,
+    cancel_callback=None,
+    resend_callback=None,
+):
+    token = str(dev_token or "")
+    if token.startswith("moemail:"):
+        email_id = token.split(":", 1)[1]
+    else:
+        email_id = token
+    if not email_id:
+        raise Exception("MoeMail emailId ??")
+
+    deadline = time.time() + timeout
+    seen_attempts = {}
+    next_resend_at = time.time() + 35
+    while time.time() < deadline:
+        raise_if_cancelled(cancel_callback)
+        if resend_callback and time.time() >= next_resend_at:
+            try:
+                resend_callback()
+                if log_callback:
+                    log_callback("[*] ??????????")
+            except Exception as exc:
+                if log_callback:
+                    log_callback(f"[Debug] ?????????: {exc}")
+            next_resend_at = time.time() + 35
+        try:
+            payload = moemail_list_messages(email_id)
+            messages = _moemail_extract_messages(payload)
+        except Exception as exc:
+            if log_callback:
+                log_callback(f"[Debug] MoeMail ????????: {exc}")
+            sleep_with_cancel(poll_interval, cancel_callback)
+            continue
+        if log_callback:
+            log_callback(f"[Debug] MoeMail ??????: {len(messages)}")
+
+        for msg in messages:
+            msg_id = (
+                msg.get("id")
+                or msg.get("messageId")
+                or msg.get("message_id")
+                or msg.get("_id")
+                or msg.get("msgid")
+            )
+            if not msg_id:
+                # still try parse list item content
+                combined = _moemail_message_text(msg)
+                code = extract_verification_code(combined, str(msg.get("subject", "") or ""))
+                if code:
+                    if log_callback:
+                        log_callback(f"[*] MoeMail ??????????: {code}")
+                    return code
+                continue
+            attempt = int(seen_attempts.get(msg_id, 0))
+            if attempt >= 5:
+                continue
+            seen_attempts[msg_id] = attempt + 1
+
+            combined = _moemail_message_text(msg)
+            subject = str(msg.get("subject", "") or "")
+            try:
+                detail = moemail_get_message(email_id, msg_id)
+                combined = (combined + "\n" + _moemail_message_text(detail)).strip()
+                if not subject:
+                    subject = str((detail or {}).get("subject", "") or "")
+            except Exception as exc:
+                if log_callback:
+                    log_callback(f"[Debug] MoeMail detail ?????????: {exc}")
+            if log_callback:
+                log_callback(f"[Debug] MoeMail ????: {subject}")
+            code = extract_verification_code(combined, subject)
+            if code:
+                if log_callback:
+                    log_callback(f"[*] MoeMail ??????????: {code}")
+                return code
+            elif log_callback:
+                log_callback(
+                    f"[Debug] ????????????? id={msg_id} attempt={seen_attempts[msg_id]}"
+                )
+        sleep_with_cancel(poll_interval, cancel_callback)
+    raise Exception(f"MoeMail ? {timeout}s ?????????")
+
+
+
 def get_email_provider():
     return config.get("email_provider", "duckmail")
 
 
 def get_email_and_token(api_key=None):
     provider = get_email_provider()
+    if provider in ("moemail", "nloln", "mail_nloln"):
+        return moemail_generate_email()
     if provider == "yyds":
         return yyds_get_email_and_token(api_key=api_key, jwt=get_yyds_jwt())
     if provider == "cloudmail":
@@ -1489,6 +1802,16 @@ def get_oai_code(
     resend_callback=None,
 ):
     provider = get_email_provider()
+    if provider in ("moemail", "nloln", "mail_nloln"):
+        return moemail_get_oai_code(
+            dev_token,
+            email,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            log_callback=log_callback,
+            cancel_callback=cancel_callback,
+            resend_callback=resend_callback,
+        )
     if provider == "yyds":
         return yyds_get_oai_code(
             dev_token,

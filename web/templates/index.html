@@ -65,19 +65,31 @@
 
       <div class="card wide">
         <div class="card-head">
-          <h2>开始前只需填这三项</h2>
+          <h2>开始前填这些</h2>
           <button id="btn-save-quick" class="btn primary sm" type="button">保存并检查</button>
         </div>
-        <p class="hint">不会填也没关系：先只改下面三个框，其余有默认值。把临时邮箱 Worker URL、域名、代理换成真实值即可。</p>
+        <p class="hint">你的 mail.nloln.cn 临时邮箱：选 moemail，填 API Key、域名（可选）、代理即可。</p>
         <form id="form-quick" class="form">
           <div class="quick-grid">
-            <label class="field-full">1) 临时邮箱 Worker 地址 <code>cloudflare_api_base</code>
-              <input type="text" id="q-cloudflare_api_base" placeholder="https://mail-api.yourdomain.com" />
+            <label>邮箱渠道 <code>email_provider</code>
+              <select id="q-email_provider">
+                <option value="moemail" selected>moemail (mail.nloln.cn)</option>
+                <option value="cloudflare">cloudflare</option>
+                <option value="cloudmail">cloudmail</option>
+                <option value="duckmail">duckmail</option>
+                <option value="yyds">yyds</option>
+              </select>
             </label>
-            <label>2) 邮箱域名 <code>defaultDomains</code>
-              <input type="text" id="q-defaultDomains" placeholder="yourdomain.com" />
+            <label>MoeMail API Key <code>moemail_api_key</code>
+              <input type="password" id="q-moemail_api_key" placeholder="X-API-Key" autocomplete="off" />
             </label>
-            <label>3) 代理 Proxy <code>proxy</code>
+            <label class="field-full">MoeMail API 地址 <code>moemail_api_base</code>
+              <input type="text" id="q-moemail_api_base" placeholder="https://mail.nloln.cn" />
+            </label>
+            <label>邮箱域名 (可选) <code>defaultDomains</code>
+              <input type="text" id="q-defaultDomains" placeholder="moemail.app" />
+            </label>
+            <label>代理 Proxy <code>proxy</code>
               <input type="text" id="q-proxy" placeholder="http://user:pass@host:port" />
             </label>
           </div>
@@ -85,25 +97,18 @@
           <details class="advanced" id="adv-box">
             <summary>高级选项（一般不用改）</summary>
             <div class="quick-grid" style="margin-top:12px">
-              <label>邮箱提供商
-                <select id="q-email_provider" name="email_provider">
-                  <option value="cloudflare">cloudflare</option>
-                  <option value="cloudmail">cloudmail</option>
-                  <option value="duckmail">duckmail</option>
-                  <option value="yyds">yyds</option>
-                </select>
+              <label class="field-full">Cloudflare API Base
+                <input type="text" id="q-cloudflare_api_base" placeholder="https://..." />
               </label>
               <label>Cloudflare API Key
-                <input type="password" id="q-cloudflare_api_key" placeholder="没有可留空" autocomplete="off" />
+                <input type="password" id="q-cloudflare_api_key" autocomplete="off" />
               </label>
               <label>auth_mode
                 <select id="q-cloudflare_auth_mode">
                   <option value="x-admin-auth">x-admin-auth</option>
                   <option value="bearer">bearer</option>
                   <option value="x-api-key">x-api-key</option>
-                  <option value="query-key">query-key</option>
                   <option value="none">none</option>
-                  <option value="x-custom-auth">x-custom-auth</option>
                 </select>
               </label>
               <label>path accounts
@@ -122,22 +127,16 @@
                 <input type="text" id="q-cpa_proxy" placeholder="direct" />
               </label>
               <label>CPA export
-                <select id="q-cpa_export_enabled">
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
+                <select id="q-cpa_export_enabled"><option value="true">true</option><option value="false">false</option></select>
               </label>
               <label>CPA headless
-                <select id="q-cpa_headless">
-                  <option value="false">false</option>
-                  <option value="true">true</option>
-                </select>
+                <select id="q-cpa_headless"><option value="false">false</option><option value="true">true</option></select>
               </label>
               <label class="field-full">CPA base_url
                 <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
               </label>
               <label class="field-full">CloudMail URL
-                <input type="text" id="q-cloudmail_url" placeholder="https://mail.example.com" />
+                <input type="text" id="q-cloudmail_url" />
               </label>
               <label>CloudMail admin
                 <input type="text" id="q-cloudmail_admin_email" />
