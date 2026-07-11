@@ -225,3 +225,17 @@ details.fold-card > summary::before {
 details.fold-card[open] > summary::before { content: "\25BE  "; }
 details.fold-card[open] > summary { margin-bottom: 10px; }
 details.fold-card .hint { margin-top: 0; }
+
+.field-key {
+  display: block;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  color: #7f92c2;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+label .field-key + input,
+label .field-key + select {
+  margin-top: 0;
+}

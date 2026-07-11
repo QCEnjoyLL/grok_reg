@@ -138,52 +138,60 @@
       </div>
 
       
-      <div class="card wide">
+            <div class="card wide">
         <div class="card-head">
           <h2>CPA / Grok 4.5 配置</h2>
           <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
         </div>
-        <p class="hint">注册成功后银 OIDC 并可选上传到 CLIProxyAPI。容器内建议 headless=false。</p>
+        <p class="hint">注册成功后银造 OIDC，可选上传到 CLIProxyAPI。容器内建议 headless=false。</p>
         <form id="form-cpa" class="form">
           <div class="quick-grid">
-            <label>CPA export <code>cpa_export_enabled</code>
+            <label>是否导出 OIDC / CPA 认证
+              <span class="field-key">cpa_export_enabled</span>
               <select id="q-cpa_export_enabled">
-                <option value="true" selected>true</option>
-                <option value="false">false</option>
+                <option value="true" selected>true (开)</option>
+                <option value="false">false (关)</option>
               </select>
             </label>
-            <label>CPA headless <code>cpa_headless</code>
+            <label>无头浏览器
+              <span class="field-key">cpa_headless</span>
               <select id="q-cpa_headless">
-                <option value="false" selected>false (推荐)</option>
-                <option value="true">true</option>
+                <option value="false" selected>false (有头，推荐)</option>
+                <option value="true">true (无头，不推荐)</option>
               </select>
             </label>
-            <label class="field-full">CPA base_url <code>cpa_base_url</code>
+            <label class="field-full">免费 Grok 4.5 API 地址
+              <span class="field-key">cpa_base_url</span>
               <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
             </label>
-            <label>CPA proxy <code>cpa_proxy</code>
-              <input type="text" id="q-cpa_proxy" placeholder="direct / empty=use proxy" />
+            <label>CPA / OIDC 专用代理
+              <span class="field-key">cpa_proxy</span>
+              <input type="text" id="q-cpa_proxy" placeholder="direct / 空则跟注册 proxy" />
             </label>
-            <label>auth dir <code>cpa_auth_dir</code>
+            <label>认证文件目录
+              <span class="field-key">cpa_auth_dir</span>
               <input type="text" id="q-cpa_auth_dir" placeholder="./cpa_auths" />
             </label>
-            <label>management upload
+            <label>自动上传到 CPA 管理接口
+              <span class="field-key">cpa_management_upload_enabled</span>
               <select id="q-cpa_management_upload_enabled">
-                <option value="false" selected>false</option>
-                <option value="true">true</option>
+                <option value="false" selected>false (关)</option>
+                <option value="true">true (开)</option>
               </select>
             </label>
-            <label class="field-full">management base <code>cpa_management_base</code>
+            <label class="field-full">CPA 管理地址
+              <span class="field-key">cpa_management_base</span>
               <input type="text" id="q-cpa_management_base" placeholder="http://192.168.x.x:8317" />
             </label>
-            <label class="field-full">management key <code>cpa_management_key</code>
-              <input type="password" id="q-cpa_management_key" placeholder="管理密码" autocomplete="off" />
+            <label class="field-full">CPA 管理密码
+              <span class="field-key">cpa_management_key</span>
+              <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
           </div>
         </form>
       </div>
 
-      <div class="card">
+<div class="card">
         <h2>注册任务</h2>
         <form id="form-register" class="form">
           <label>再注册数量 --extra
