@@ -14,7 +14,7 @@
         <span class="logo">G</span>
         <div>
           <h1>{{ title }}</h1>
-          <p class="sub">Docker · Chromium · Xvfb · noVNC · CPA OIDC</p>
+          <p class="sub">Docker ? Chromium ? Xvfb ? noVNC ? CPA OIDC</p>
         </div>
       </div>
       <div class="top-actions">
@@ -39,7 +39,7 @@
           <a id="link-novnc" class="btn primary" target="_blank" rel="noopener">打开 noVNC 看浏览器</a>
           <a class="btn ghost" href="/api/download/accounts" id="link-accounts">下载 accounts</a>
         </div>
-        <p class="hint">noVNC 公网地址在下方「系统设置」配置（你映射了 <code>6089:6080</code> 时端口填 <code>6089</code>）.</p>
+        <p class="hint">noVNC 公网地址在「系统设置」配置，例如 <code>http://IP:6089/vnc.html?autoconnect=1&amp;resize=scale</code></p>
       </div>
 
       <div class="card">
@@ -60,6 +60,90 @@
           </label>
           <p class="hint">解析结果：<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
           <button type="submit" class="btn primary">保存设置</button>
+        </form>
+      </div>
+
+      <div class="card wide">
+        <div class="card-head">
+          <h2>必要配置 （邮箱 / Proxy / CPA）</h2>
+          <button id="btn-save-quick" class="btn primary sm" type="button">保存必要配置</button>
+        </div>
+        <p class="hint">不用直接编辑 JSON，先填这些就能开始注册。高级项仍可在下方 JSON 编辑。</p>
+        <form id="form-quick" class="form">
+          <div class="quick-grid">
+            <label>邮箱提供商 email_provider
+              <select id="q-email_provider" name="email_provider">
+                <option value="cloudflare">cloudflare</option>
+                <option value="cloudmail">cloudmail</option>
+                <option value="duckmail">duckmail</option>
+                <option value="yyds">yyds</option>
+              </select>
+            </label>
+            <label>邮箱域名 defaultDomains
+              <input type="text" id="q-defaultDomains" placeholder="example.com" />
+            </label>
+
+            <label class="field-full">Cloudflare API Base (cloudflare_api_base)
+              <input type="text" id="q-cloudflare_api_base" placeholder="https://your-temp-mail-worker.example.com" />
+            </label>
+            <label>Cloudflare API Key
+              <input type="password" id="q-cloudflare_api_key" placeholder="可选" autocomplete="off" />
+            </label>
+            <label>Cloudflare auth_mode
+              <select id="q-cloudflare_auth_mode">
+                <option value="none">none</option>
+                <option value="bearer">bearer</option>
+                <option value="x-api-key">x-api-key</option>
+                <option value="query-key">query-key</option>
+                <option value="x-custom-auth">x-custom-auth</option>
+                <option value="x-admin-auth">x-admin-auth</option>
+              </select>
+            </label>
+            <label>path accounts
+              <input type="text" id="q-cloudflare_path_accounts" placeholder="/admin/new_address" />
+            </label>
+            <label>path messages
+              <input type="text" id="q-cloudflare_path_messages" placeholder="/api/mails" />
+            </label>
+            <label>path domains
+              <input type="text" id="q-cloudflare_path_domains" placeholder="/api/domains" />
+            </label>
+            <label>path token
+              <input type="text" id="q-cloudflare_path_token" placeholder="/api/token" />
+            </label>
+
+            <label class="field-full">Proxy （注册主代理）
+              <input type="text" id="q-proxy" placeholder="http://user:pass@host:port" />
+            </label>
+            <label>CPA proxy （空则跟 proxy，可 direct）
+              <input type="text" id="q-cpa_proxy" placeholder="direct / http://..." />
+            </label>
+            <label>CPA export
+              <select id="q-cpa_export_enabled">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+            <label>CPA headless （建议 false）
+              <select id="q-cpa_headless">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+            <label class="field-full">CPA base_url
+              <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
+            </label>
+
+            <label class="field-full">CloudMail URL （仅 cloudmail）
+              <input type="text" id="q-cloudmail_url" placeholder="https://mail.example.com" />
+            </label>
+            <label>CloudMail admin
+              <input type="text" id="q-cloudmail_admin_email" />
+            </label>
+            <label>CloudMail password
+              <input type="password" id="q-cloudmail_password" autocomplete="off" />
+            </label>
+          </div>
         </form>
       </div>
 
@@ -123,10 +207,10 @@
 
       <div class="card wide">
         <div class="card-head">
-          <h2>注册配置 config.json</h2>
-          <button id="btn-save-config" class="btn primary sm" type="button">保存修改</button>
+          <h2>完整 config.json (高级)</h2>
+          <button id="btn-save-config" class="btn primary sm" type="button">保存 JSON</button>
         </div>
-        <p class="hint">跑注册前至少配好：邮箱 API、proxy。敏感字段脱敏；含 <code>*</code> 且未改动不会覆盖原密钥。保存到 <code>/data/config.json</code>.</p>
+        <p class="hint">敏感字段脱敏；含 <code>*</code> 且未改动不会覆盖原密钥。保存到 <code>/data/config.json</code></p>
         <textarea id="config-editor" class="editor" spellcheck="false"></textarea>
       </div>
     </section>
