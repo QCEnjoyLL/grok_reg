@@ -269,7 +269,8 @@
     document.getElementById("log").textContent = "";
   });
 
-  document.getElementById("btn-save-config").addEventListener("click", async () => {
+  document.getElementById("btn-save-config").addEventListener("click", async (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
       const config = JSON.parse(document.getElementById("config-editor").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config }) });

@@ -195,3 +195,30 @@ details.advanced[open] summary {
   margin-bottom: 4px;
   color: var(--text);
 }
+
+details.fold-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,.02);
+}
+details.fold-card > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+details.fold-card > summary::-webkit-details-marker { display: none; }
+details.fold-card > summary::before {
+  content: "\25B8  ";
+  color: var(--muted);
+  font-weight: 700;
+}
+details.fold-card[open] > summary::before { content: "\25BE  "; }
+details.fold-card[open] > summary { margin-bottom: 10px; }
+details.fold-card .hint { margin-top: 0; }

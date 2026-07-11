@@ -149,71 +149,77 @@
         </form>
       </div>
 
-<div class="card">
-        <h2>注册任务</h2>
+      <div class="card">
+        <h2>????</h2>
         <form id="form-register" class="form">
-          <label>再注册数量 --extra
+          <label>????? --extra
             <input type="number" name="extra" value="1" min="1" max="500" />
           </label>
-          <label>线程 --threads
+          <label>?? --threads
             <input type="number" name="threads" value="1" min="1" max="10" />
           </label>
-          <label>mint workers (-1=自动)
+          <label>mint workers (-1=??)
             <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
           </label>
-          <label class="check"><input type="checkbox" name="fast" checked /> 快速模式</label>
+          <label class="check"><input type="checkbox" name="fast" checked /> ????</label>
           <div class="row">
-            <button type="submit" class="btn primary">开始注册</button>
-            <button type="button" id="btn-stop" class="btn danger">停止</button>
+            <button type="submit" class="btn primary">????</button>
+            <button type="button" id="btn-stop" class="btn danger">??</button>
           </div>
         </form>
       </div>
 
       <div class="card">
-        <h2>补认证 Backfill</h2>
-        <form id="form-backfill" class="form">
-          <label>limit (0=全部缺失)
-            <input type="number" name="limit" value="1" min="0" max="5000" />
-          </label>
-          <label>指定邮箱（可选）
-            <input type="text" name="email" placeholder="user@domain" />
-          </label>
-          <label>timeout 秒
-            <input type="number" name="timeout" value="300" min="30" />
-          </label>
-          <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
-          <label class="check"><input type="checkbox" name="headless" /> headless (不推荐)</label>
-          <div class="row">
-            <button type="submit" class="btn primary">开始 Backfill</button>
-          </div>
-        </form>
+        <details class="advanced fold-card" id="backfill-box">
+          <summary>??? Backfill?????????</summary>
+          <form id="form-backfill" class="form">
+            <label>limit (0=????)
+              <input type="number" name="limit" value="1" min="0" max="5000" />
+            </label>
+            <label>????????
+              <input type="text" name="email" placeholder="user@domain" />
+            </label>
+            <label>timeout ?
+              <input type="number" name="timeout" value="300" min="30" />
+            </label>
+            <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
+            <label class="check"><input type="checkbox" name="headless" /> headless (???)</label>
+            <div class="row">
+              <button type="submit" class="btn primary">?? Backfill</button>
+            </div>
+          </form>
+        </details>
       </div>
 
       <div class="card wide">
         <div class="card-head">
-          <h2>实时日志</h2>
-          <button id="btn-clear-log" class="btn ghost sm" type="button">清屏</button>
+          <h2>????</h2>
+          <button id="btn-clear-log" class="btn ghost sm" type="button">??</button>
         </div>
         <pre id="log" class="log"></pre>
       </div>
 
       <div class="card">
-        <h2>最近账号</h2>
-        <div id="accounts-table" class="table-wrap">加载中...</div>
+        <h2>????</h2>
+        <div id="accounts-table" class="table-wrap">???...</div>
       </div>
 
       <div class="card">
-        <h2>CPA 文件</h2>
-        <div id="cpa-table" class="table-wrap">加载中...</div>
+        <h2>CPA ??</h2>
+        <div id="cpa-table" class="table-wrap">???...</div>
       </div>
 
       <div class="card wide">
-        <div class="card-head">
-          <h2>完整 config.json (高级)</h2>
-          <button id="btn-save-config" class="btn primary sm" type="button">保存 JSON</button>
-        </div>
-        <p class="hint">敏感字段脱敏；含 <code>*</code> 且未改动不会覆盖原密钥。保存到 <code>/data/config.json</code></p>
-        <textarea id="config-editor" class="editor" spellcheck="false"></textarea>
+        <details class="advanced fold-card" id="json-box">
+          <summary>
+            <span>?? config.json?????????</span>
+          </summary>
+          <div class="row" style="margin: 8px 0 10px; justify-content: flex-end;">
+            <button id="btn-save-config" class="btn primary sm" type="button">?? JSON</button>
+          </div>
+          <p class="hint">???????? <code>*</code> ??????????????? <code>/data/config.json</code></p>
+          <textarea id="config-editor" class="editor" spellcheck="false"></textarea>
+        </details>
       </div>
     </section>
   </div>
