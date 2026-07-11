@@ -1,4 +1,4 @@
-﻿# Grok Register - server image with Chromium + Xvfb + noVNC + web dashboard
+# Grok Register - server image with Chromium + Xvfb + noVNC + web dashboard
 FROM python:3.13-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -66,6 +66,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Default config template (runtime mounts override)
 COPY config.example.json /app/config.example.json
 RUN if [ ! -f /app/config.json ]; then cp /app/config.example.json /app/config.json; fi \
+    && sed -i "s/\r$//" /app/docker/entrypoint.sh /app/docker/start-display.sh \
     && chmod +x /app/docker/entrypoint.sh /app/docker/start-display.sh \
     && mkdir -p /data/cpa_auths /data/logs /data/cookies
 

@@ -1,4 +1,4 @@
-﻿services:
+services:
   grok-reg:
     image: ${GROK_REG_IMAGE:-grok-reg:local}
     build:

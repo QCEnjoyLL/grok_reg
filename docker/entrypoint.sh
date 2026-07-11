@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 export DISPLAY="${DISPLAY:-:99}"
