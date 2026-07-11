@@ -1,0 +1,86 @@
+﻿name: Build and push Docker image
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+    paths:
+      - "Dockerfile"
+      - "docker/**"
+      - "web/**"
+      - "cpa_xai/**"
+      - "scripts/**"
+      - "turnstilePatch/**"
+      - "*.py"
+      - "pyproject.toml"
+      - "config.example.json"
+      - ".github/workflows/docker-image.yml"
+      - "docker-compose.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker/**"
+      - "web/**"
+      - "*.py"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image name (lowercase)
+        id: meta_name
+        run: |
+          OWNER_REPO="${{ github.repository }}"
+          echo "image=${REGISTRY}/$(echo "$OWNER_REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Docker meta tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.meta_name.outputs.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

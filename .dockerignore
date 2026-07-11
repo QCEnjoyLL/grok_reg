@@ -1,0 +1,19 @@
+﻿# ignore large/local artifacts in build context
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.log
+*.bak
+data/
+accounts_*.txt
+cpa_auths/
+cookies/
+screenshots/
+config.json
+config.local.json
+.env
+dist/
+.mise*
+uv.lock
