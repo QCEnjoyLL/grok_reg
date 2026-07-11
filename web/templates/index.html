@@ -13,105 +13,125 @@
         <span class="logo">G</span>
         <div>
           <h1>{{ title }}</h1>
-          <p class="sub">Docker · Chromium · Xvfb · noVNC · CPA OIDC</p>
+          <p class="sub">Docker ? Chromium ? Xvfb ? noVNC ? CPA OIDC</p>
         </div>
       </div>
       <div class="top-actions">
-        <span id="run-badge" class="badge idle">空闲</span>
-        <button id="btn-refresh" class="btn ghost">刷新状态</button>
-        {% if need_token %}
-        <button id="btn-token" class="btn ghost">设置 Token</button>
-        {% endif %}
+        <span id="run-badge" class="badge idle">??</span>
+        <button id="btn-refresh" class="btn ghost" type="button">????</button>
+        <button id="btn-logout" class="btn ghost" type="button">??</button>
       </div>
     </header>
 
+    <div id="setup-hints" class="hints" hidden></div>
+
     <section class="grid">
       <div class="card">
-        <h2>概览</h2>
+        <h2>??</h2>
         <div class="stats">
-          <div><label>账号</label><strong id="st-accounts">-</strong></div>
-          <div><label>CPA 文件</label><strong id="st-cpa">-</strong></div>
-          <div><label>邮箱源</label><strong id="st-mail">-</strong></div>
+          <div><label>??</label><strong id="st-accounts">-</strong></div>
+          <div><label>CPA ??</label><strong id="st-cpa">-</strong></div>
+          <div><label>???</label><strong id="st-mail">-</strong></div>
           <div><label>DISPLAY</label><strong id="st-display">-</strong></div>
         </div>
         <div class="links">
-          <a id="link-novnc" class="btn primary" target="_blank" rel="noopener">打开 noVNC 看浏览器</a>
-          <a class="btn ghost" href="/api/download/accounts" id="link-accounts">下载 accounts</a>
+          <a id="link-novnc" class="btn primary" target="_blank" rel="noopener">?? noVNC ????</a>
+          <a class="btn ghost" href="/api/download/accounts" id="link-accounts">?? accounts</a>
         </div>
-        <p class="hint">服务器跑有头 Chromium：用 noVNC 观察 Turnstile / 授权页。默认 VNC 密码见环境变量 <code>VNC_PASSWORD</code>。</p>
+        <p class="hint">noVNC ???????????????????? <code>6089:6080</code> ???? <code>6089</code>??</p>
       </div>
 
       <div class="card">
-        <h2>注册任务</h2>
+        <h2>????</h2>
+        <form id="form-settings" class="form">
+          <label>?? Token???????????
+            <input type="password" name="web_token" id="set-token" placeholder="??? Token ???" autocomplete="new-password" />
+          </label>
+          <p class="hint">?? Token ???<code id="token-hint">-</code></p>
+          <label>noVNC ?? URL?????????
+            <input type="text" name="novnc_public_url" id="set-novnc-url" placeholder="http://??IP:6089/vnc.html?autoconnect=1&resize=scale" />
+          </label>
+          <label>? Host + ??
+            <div class="row">
+              <input type="text" name="novnc_host" id="set-novnc-host" placeholder="???IP???" style="flex:2" />
+              <input type="text" name="novnc_port" id="set-novnc-port" placeholder="6089" style="flex:1" />
+            </div>
+          </label>
+          <p class="hint">?????<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
+          <button type="submit" class="btn primary">????</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>????</h2>
         <form id="form-register" class="form">
-          <label>再注册数量 --extra
+          <label>????? --extra
             <input type="number" name="extra" value="1" min="1" max="500" />
           </label>
-          <label>线程 --threads
+          <label>?? --threads
             <input type="number" name="threads" value="1" min="1" max="10" />
           </label>
-          <label>mint workers（-1=自动）
+          <label>mint workers?-1=???
             <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
           </label>
-          <label class="check"><input type="checkbox" name="fast" checked /> 快速模式</label>
+          <label class="check"><input type="checkbox" name="fast" checked /> ????</label>
           <div class="row">
-            <button type="submit" class="btn primary">开始注册</button>
-            <button type="button" id="btn-stop" class="btn danger">停止</button>
+            <button type="submit" class="btn primary">????</button>
+            <button type="button" id="btn-stop" class="btn danger">??</button>
           </div>
         </form>
       </div>
 
       <div class="card">
-        <h2>补认证 Backfill</h2>
+        <h2>??? Backfill</h2>
         <form id="form-backfill" class="form">
-          <label>limit（0=全部缺失）
+          <label>limit?0=?????
             <input type="number" name="limit" value="1" min="0" max="5000" />
           </label>
-          <label>指定邮箱（可选）
+          <label>????????
             <input type="text" name="email" placeholder="user@domain" />
           </label>
-          <label>timeout 秒
+          <label>timeout ?
             <input type="number" name="timeout" value="300" min="30" />
           </label>
           <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
-          <label class="check"><input type="checkbox" name="headless" /> headless（不推荐）</label>
+          <label class="check"><input type="checkbox" name="headless" /> headless?????</label>
           <div class="row">
-            <button type="submit" class="btn primary">开始 Backfill</button>
+            <button type="submit" class="btn primary">?? Backfill</button>
           </div>
         </form>
       </div>
 
       <div class="card wide">
         <div class="card-head">
-          <h2>实时日志</h2>
-          <button id="btn-clear-log" class="btn ghost sm">清屏</button>
+          <h2>????</h2>
+          <button id="btn-clear-log" class="btn ghost sm" type="button">??</button>
         </div>
         <pre id="log" class="log"></pre>
       </div>
 
       <div class="card">
-        <h2>最近账号</h2>
-        <div id="accounts-table" class="table-wrap">加载中…</div>
+        <h2>????</h2>
+        <div id="accounts-table" class="table-wrap">????</div>
       </div>
 
       <div class="card">
-        <h2>CPA 文件</h2>
-        <div id="cpa-table" class="table-wrap">加载中…</div>
+        <h2>CPA ??</h2>
+        <div id="cpa-table" class="table-wrap">????</div>
       </div>
 
       <div class="card wide">
         <div class="card-head">
-          <h2>配置（敏感字段脱敏）</h2>
-          <button id="btn-save-config" class="btn primary sm">保存修改</button>
+          <h2>???? config.json</h2>
+          <button id="btn-save-config" class="btn primary sm" type="button">????</button>
         </div>
-        <p class="hint">保存会写入 <code>/data/config.json</code>（volume）。脱敏值含 <code>*</code> 且未改动时不会覆盖原密钥。</p>
+        <p class="hint">??????????? API?proxy????????? <code>*</code> ??????????????? <code>/data/config.json</code>?</p>
         <textarea id="config-editor" class="editor" spellcheck="false"></textarea>
       </div>
     </section>
   </div>
   <script>
-    window.__NEED_TOKEN__ = {{ 'true' if need_token else 'false' }};
-    window.__NOVNC_PORT__ = "{{ novnc_port }}";
+    window.__NOVNC_URL__ = {{ novnc_url|tojson }};
   </script>
   <script src="/static/app.js"></script>
 </body>

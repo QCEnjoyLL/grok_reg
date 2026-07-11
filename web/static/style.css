@@ -110,3 +110,22 @@ th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background
   .stats { grid-template-columns: repeat(2, 1fr); }
   .top { flex-direction: column; align-items: flex-start; }
 }
+
+.login-body {
+  min-height: 100vh; display:grid; place-items:center; padding: 20px;
+}
+.login-card {
+  width: min(420px, 100%);
+  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.35);
+}
+.login-brand { margin-bottom: 16px; }
+.error { color: #ff8b97; font-size: 0.88rem; margin: 8px 0 0; }
+.hints {
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid #3a4d2a; background: rgba(62,207,142,.08); color: #b7f0d0;
+  font-size: 0.88rem; line-height: 1.45;
+}

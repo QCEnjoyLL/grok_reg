@@ -1,4 +1,4 @@
-"""Grok Register web dashboard - job control, logs, accounts, config, noVNC link."""
+"""Grok Register web dashboard - login gate, settings, jobs, noVNC."""
 from __future__ import annotations
 
 import argparse
@@ -10,14 +10,13 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -27,43 +26,116 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", APP_HOME / "data"))
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
-# Ensure project root importable
 if str(APP_HOME) not in sys.path:
     sys.path.insert(0, str(APP_HOME))
 
 MAX_LOG_LINES = 4000
-WEB_TOKEN = os.environ.get("WEB_TOKEN", "").strip()
 DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "Grok Register")
+SETTINGS_FILE = DATA_DIR / "ui_settings.json"
+ENV_BOOT_TOKEN = os.environ.get("WEB_TOKEN", "").strip()
+ENV_BOOT_NOVNC = os.environ.get("NOVNC_PUBLIC_URL", "").strip()
+
+# Runtime auth token (mutable via UI; persisted under /data)
+_token_lock = threading.Lock()
+_runtime_token = ENV_BOOT_TOKEN or "change-me"
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def _load_ui_settings() -> dict[str, Any]:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    defaults = {
+        "web_token": _runtime_token,
+        "novnc_public_url": ENV_BOOT_NOVNC,  # e.g. http://host:6089/vnc.html?autoconnect=1&resize=scale
+        "novnc_host": "",
+        "novnc_port": os.environ.get("NOVNC_HOST_PORT")
+        or os.environ.get("NOVNC_PUBLIC_PORT")
+        or "",
+    }
+    if not SETTINGS_FILE.is_file():
+        # seed from env once
+        save = {
+            "web_token": defaults["web_token"],
+            "novnc_public_url": defaults["novnc_public_url"],
+            "novnc_host": defaults["novnc_host"],
+            "novnc_port": str(defaults["novnc_port"] or ""),
+        }
+        SETTINGS_FILE.write_text(json.dumps(save, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return save
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return defaults
+        for k, v in defaults.items():
+            data.setdefault(k, v)
+        return data
+    except Exception:
+        return defaults
+
+
+def _save_ui_settings(data: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def get_web_token() -> str:
+    with _token_lock:
+        return _runtime_token
+
+
+def set_web_token(token: str) -> None:
+    global _runtime_token
+    token = (token or "").strip()
+    if not token:
+        raise ValueError("token ????")
+    with _token_lock:
+        _runtime_token = token
+    s = _load_ui_settings()
+    s["web_token"] = token
+    _save_ui_settings(s)
+
+
+def init_runtime_token() -> None:
+    global _runtime_token
+    s = _load_ui_settings()
+    tok = str(s.get("web_token") or ENV_BOOT_TOKEN or "change-me").strip()
+    with _token_lock:
+        _runtime_token = tok
+
+
+def build_novnc_url(request: Request | None = None) -> str:
+    s = _load_ui_settings()
+    full = str(s.get("novnc_public_url") or "").strip()
+    if full:
+        return full
+    host = str(s.get("novnc_host") or "").strip()
+    port = str(s.get("novnc_port") or "").strip()
+    if not host and request is not None:
+        # fall back to request hostname
+        host = request.url.hostname or "127.0.0.1"
+    if not port:
+        # container internal published mapping unknown; default 6080
+        port = "6080"
+    if host:
+        return f"http://{host}:{port}/vnc.html?autoconnect=1&resize=scale"
+    return f":{port}/vnc.html?autoconnect=1&resize=scale"
+
+
 def resolve_config_path() -> Path:
     for p in (DATA_DIR / "config.json", APP_HOME / "config.json", APP_HOME / "config.example.json"):
         if p.is_file():
             return p
-    return APP_HOME / "config.json"
+    return DATA_DIR / "config.json"
 
 
 def resolve_accounts_path() -> Path:
-    data_p = DATA_DIR / "accounts_cli.txt"
-    app_p = APP_HOME / "accounts_cli.txt"
-    if data_p.is_file() or DATA_DIR.is_dir():
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        return data_p
-    return app_p
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR / "accounts_cli.txt"
 
 
 def resolve_cpa_dir() -> Path:
-    cfg = load_config_dict()
-    raw = str(cfg.get("cpa_auth_dir") or "./cpa_auths")
-    p = Path(raw).expanduser()
-    if p.is_absolute():
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-    # relative paths always land on the data volume in Docker
     cand = DATA_DIR / "cpa_auths"
     cand.mkdir(parents=True, exist_ok=True)
     return cand
@@ -79,7 +151,6 @@ def load_config_dict() -> dict[str, Any]:
         return {}
     if not isinstance(raw, dict):
         return {}
-    # strip comment keys
     return {k: v for k, v in raw.items() if not str(k).startswith("//") and not str(k).startswith("#")}
 
 
@@ -100,7 +171,6 @@ class JobManager:
         self.finished_at: str | None = None
         self.exit_code: int | None = None
         self.logs: deque[str] = deque(maxlen=MAX_LOG_LINES)
-        self._readers: list[threading.Thread] = []
         self.stats: dict[str, int] = {
             "reg_success": 0,
             "reg_fail": 0,
@@ -120,9 +190,8 @@ class JobManager:
             self._parse_stats(line)
 
     def _parse_stats(self, line: str) -> None:
-        # best-effort from register_cli summary / progress
         m = re.search(
-            r"注册成功\s*(\d+).*注册失败\s*(\d+).*CPA成功\s*(\d+).*CPA失败\s*(\d+).*CPA跳过\s*(\d+)",
+            r"????\s*(\d+).*????\s*(\d+).*CPA??\s*(\d+).*CPA??\s*(\d+).*CPA??\s*(\d+)",
             line,
         )
         if m:
@@ -168,7 +237,7 @@ class JobManager:
     def start(self, kind: str, cmd: list[str], env: dict[str, str] | None = None) -> None:
         with self._lock:
             if self.proc is not None and self.proc.poll() is None:
-                raise RuntimeError("已有任务在运行，请先停止")
+                raise RuntimeError("????????????")
             run_env = os.environ.copy()
             if env:
                 run_env.update(env)
@@ -205,9 +274,7 @@ class JobManager:
                         self.finished_at = _now_iso()
                     self.append_log(f"[job] exited code={code}")
 
-            t = threading.Thread(target=_reader, daemon=True, name="job-log-reader")
-            t.start()
-            self._readers = [t]
+            threading.Thread(target=_reader, daemon=True, name="job-log-reader").start()
 
     def stop(self, timeout: float = 15.0) -> bool:
         with self._lock:
@@ -232,38 +299,53 @@ class JobManager:
 
 
 jobs = JobManager()
-app = FastAPI(title=DASHBOARD_TITLE, version="1.0.0")
+app = FastAPI(title=DASHBOARD_TITLE, version="1.1.0")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+init_runtime_token()
 
 
-def _check_token(request: Request) -> None:
-    if not WEB_TOKEN:
-        return
+def _extract_token(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
-    q = request.query_params.get("token", "")
-    cookie = request.cookies.get("web_token", "")
     bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-    got = bearer or q or cookie or request.headers.get("X-Web-Token", "")
-    if got != WEB_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized: set WEB_TOKEN header/query")
+    return (
+        bearer
+        or request.headers.get("X-Web-Token", "")
+        or request.query_params.get("token", "")
+        or request.cookies.get("web_token", "")
+        or ""
+    ).strip()
+
+
+def _token_ok(got: str) -> bool:
+    return bool(got) and got == get_web_token()
+
+
+def require_auth(request: Request) -> None:
+    if not _token_ok(_extract_token(request)):
+        raise HTTPException(status_code=401, detail="???? Token ??")
 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    # allow health without token
-    if request.url.path in ("/api/health", "/healthz"):
+    path = request.url.path
+    # public endpoints
+    if path in ("/healthz", "/api/health", "/login", "/api/login"):
         return await call_next(request)
-    if request.url.path.startswith("/static"):
+    if path.startswith("/static"):
         return await call_next(request)
-    try:
-        if WEB_TOKEN and request.url.path.startswith("/api"):
-            _check_token(request)
-        elif WEB_TOKEN and request.url.path == "/":
-            # page itself checks via query cookie set by frontend
-            pass
-    except HTTPException as e:
-        return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+    # HTML shell: always serve (JS enforces login UI). API needs token.
+    if path.startswith("/api") or path.startswith("/ws"):
+        # websocket handled separately
+        if path.startswith("/api") and path not in ("/api/health", "/api/login"):
+            try:
+                require_auth(request)
+            except HTTPException as e:
+                return JSONResponse({"detail": e.detail}, status_code=e.status_code)
     return await call_next(request)
+
+
+class LoginBody(BaseModel):
+    token: str
 
 
 class RegisterBody(BaseModel):
@@ -287,6 +369,13 @@ class ConfigUpdateBody(BaseModel):
     config: dict[str, Any]
 
 
+class SettingsUpdateBody(BaseModel):
+    web_token: str | None = None
+    novnc_public_url: str | None = None
+    novnc_host: str | None = None
+    novnc_port: str | None = None
+
+
 @app.get("/healthz")
 @app.get("/api/health")
 def health():
@@ -296,31 +385,139 @@ def health():
         "display": os.environ.get("DISPLAY", ""),
         "data_dir": str(DATA_DIR),
         "job_running": jobs.is_running(),
+        "auth_required": True,
     }
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return TEMPLATES.TemplateResponse(
+        request,
+        "login.html",
+        {"title": DASHBOARD_TITLE},
+    )
+
+
+@app.post("/api/login")
+def api_login(body: LoginBody):
+    token = (body.token or "").strip()
+    if not _token_ok(token):
+        # allow bootstrap if settings empty? no - compare runtime
+        if token != get_web_token():
+            raise HTTPException(401, "Token ??")
+    resp = JSONResponse({"ok": True})
+    # cookie for page navigations; 30 days
+    resp.set_cookie(
+        key="web_token",
+        value=token,
+        httponly=False,
+        samesite="lax",
+        max_age=30 * 24 * 3600,
+    )
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("web_token")
+    return resp
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    # gate: no valid cookie/token -> login page
+    if not _token_ok(_extract_token(request)):
+        return RedirectResponse(url="/login", status_code=302)
     return TEMPLATES.TemplateResponse(
         request,
         "index.html",
         {
             "title": DASHBOARD_TITLE,
-            "need_token": bool(WEB_TOKEN),
-            "novnc_port": os.environ.get("NOVNC_PORT", "6080"),
-            "web_port": os.environ.get("WEB_PORT", "8080"),
+            "novnc_url": build_novnc_url(request),
         },
     )
 
 
+@app.get("/api/me")
+def api_me(request: Request):
+    require_auth(request)
+    s = _load_ui_settings()
+    return {
+        "ok": True,
+        "novnc_public_url": s.get("novnc_public_url") or "",
+        "novnc_host": s.get("novnc_host") or "",
+        "novnc_port": s.get("novnc_port") or "",
+        "novnc_url": build_novnc_url(request),
+        "token_hint": mask_secret(get_web_token()),
+    }
+
+
+@app.get("/api/settings")
+def api_settings_get(request: Request):
+    require_auth(request)
+    s = _load_ui_settings()
+    return {
+        "web_token_hint": mask_secret(str(s.get("web_token") or "")),
+        "novnc_public_url": s.get("novnc_public_url") or "",
+        "novnc_host": s.get("novnc_host") or "",
+        "novnc_port": str(s.get("novnc_port") or ""),
+        "novnc_url": build_novnc_url(request),
+    }
+
+
+@app.put("/api/settings")
+def api_settings_put(body: SettingsUpdateBody, request: Request):
+    require_auth(request)
+    s = _load_ui_settings()
+    if body.novnc_public_url is not None:
+        s["novnc_public_url"] = body.novnc_public_url.strip()
+    if body.novnc_host is not None:
+        s["novnc_host"] = body.novnc_host.strip()
+    if body.novnc_port is not None:
+        s["novnc_port"] = str(body.novnc_port).strip()
+    token_changed = False
+    new_token = None
+    if body.web_token is not None:
+        nt = body.web_token.strip()
+        # ignore unchanged masked value
+        if nt and "*" not in nt:
+            set_web_token(nt)
+            s["web_token"] = nt
+            token_changed = True
+            new_token = nt
+        elif nt and "*" in nt:
+            pass  # keep
+    else:
+        s["web_token"] = get_web_token()
+    _save_ui_settings(s)
+    resp = {
+        "ok": True,
+        "token_changed": token_changed,
+        "settings": {
+            "web_token_hint": mask_secret(get_web_token()),
+            "novnc_public_url": s.get("novnc_public_url") or "",
+            "novnc_host": s.get("novnc_host") or "",
+            "novnc_port": str(s.get("novnc_port") or ""),
+            "novnc_url": build_novnc_url(request),
+        },
+    }
+    out = JSONResponse(resp)
+    if token_changed and new_token:
+        out.set_cookie("web_token", new_token, httponly=False, samesite="lax", max_age=30 * 24 * 3600)
+    return out
+
+
 @app.get("/api/status")
 def api_status(request: Request):
-    _check_token(request)
+    require_auth(request)
     accounts = resolve_accounts_path()
     cpa_dir = resolve_cpa_dir()
     account_count = 0
     if accounts.is_file():
-        account_count = sum(1 for line in accounts.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
+        account_count = sum(
+            1 for line in accounts.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip()
+        )
     cpa_count = 0
     if cpa_dir.is_dir():
         cpa_count = len(list(cpa_dir.glob("xai-*.json")))
@@ -337,19 +534,52 @@ def api_status(request: Request):
         "cpa_export_enabled": bool(cfg.get("cpa_export_enabled", True)),
         "cpa_headless": bool(cfg.get("cpa_headless", False)),
         "display": os.environ.get("DISPLAY", ""),
-        "novnc_path": f":{os.environ.get('NOVNC_PORT', '6080')}/vnc.html",
+        "novnc_url": build_novnc_url(request),
+        "setup_hints": _setup_hints(cfg),
     }
+
+
+def _setup_hints(cfg: dict[str, Any]) -> list[str]:
+    hints = []
+    provider = str(cfg.get("email_provider") or "")
+    if provider == "cloudflare":
+        if not cfg.get("cloudflare_api_base") or "example.com" in str(cfg.get("cloudflare_api_base") or "") or str(cfg.get("cloudflare_api_base") or "").endswith("xxxx"):
+            hints.append("??? cloudflare_api_base????? Worker?")
+        if not cfg.get("defaultDomains") or cfg.get("defaultDomains") in ("example.com", "xx.shop"):
+            hints.append("??? defaultDomains ???????")
+    elif provider == "cloudmail":
+        if not cfg.get("cloudmail_url"):
+            hints.append("??? cloudmail_url")
+    else:
+        if not provider:
+            hints.append("??? email_provider?cloudflare/cloudmail/duckmail/yyds?")
+    proxy = str(cfg.get("proxy") or "")
+    if not proxy or proxy in ("http://127.0.0.1:7890",):
+        hints.append("???? proxy ??????????")
+    if cfg.get("cpa_export_enabled", True) and cfg.get("cpa_headless", False):
+        hints.append("cpa_headless ?? false???? Xvfb ???")
+    if not hints:
+        hints.append("??????????????? 1 ????")
+    return hints
 
 
 @app.get("/api/logs")
 def api_logs(request: Request, tail: int = Query(200, ge=1, le=4000)):
-    _check_token(request)
+    require_auth(request)
     return {"lines": jobs.get_logs(tail)}
 
 
 @app.websocket("/ws/logs")
 async def ws_logs(ws: WebSocket, token: str = ""):
-    if WEB_TOKEN and token != WEB_TOKEN and ws.headers.get("x-web-token") != WEB_TOKEN:
+    got = token or ws.headers.get("x-web-token") or ""
+    # also cookie header
+    cookie = ws.headers.get("cookie") or ""
+    if "web_token=" in cookie and not got:
+        for part in cookie.split(";"):
+            part = part.strip()
+            if part.startswith("web_token="):
+                got = part.split("=", 1)[1]
+    if not _token_ok(got):
         await ws.close(code=4401)
         return
     await ws.accept()
@@ -375,13 +605,14 @@ async def ws_logs(ws: WebSocket, token: str = ""):
 
 @app.get("/api/accounts")
 def api_accounts(request: Request, limit: int = Query(100, ge=1, le=2000), offset: int = 0):
-    _check_token(request)
+    require_auth(request)
     path = resolve_accounts_path()
     rows = []
+    total = 0
     if path.is_file():
         lines = [ln.strip() for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
-        slice_ = lines[offset : offset + limit]
-        for ln in slice_:
+        total = len(lines)
+        for ln in lines[offset : offset + limit]:
             parts = ln.split("----")
             email = parts[0] if parts else ln
             password = parts[1] if len(parts) > 1 else ""
@@ -390,19 +621,16 @@ def api_accounts(request: Request, limit: int = Query(100, ge=1, le=2000), offse
                 {
                     "email": email,
                     "password": password,
-                    "sso_preview": (sso[:24] + "…") if len(sso) > 24 else sso,
+                    "sso_preview": (sso[:24] + "?") if len(sso) > 24 else sso,
                     "has_sso": bool(sso),
                 }
             )
-    total = 0
-    if path.is_file():
-        total = sum(1 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
     return {"total": total, "items": rows}
 
 
 @app.get("/api/cpa")
 def api_cpa(request: Request, limit: int = Query(100, ge=1, le=2000)):
-    _check_token(request)
+    require_auth(request)
     d = resolve_cpa_dir()
     items = []
     if d.is_dir():
@@ -422,10 +650,10 @@ def api_cpa(request: Request, limit: int = Query(100, ge=1, le=2000)):
 
 @app.get("/api/config")
 def api_config_get(request: Request, redact: bool = True):
-    _check_token(request)
+    require_auth(request)
     path = resolve_config_path()
     if not path.is_file():
-        return {"path": str(path), "config": {}}
+        return {"path": str(path), "config": {}, "setup_hints": _setup_hints({})}
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         return {"path": str(path), "config": {}}
@@ -448,15 +676,14 @@ def api_config_get(request: Request, redact: bool = True):
             out[k] = mask_secret(v)
         else:
             out[k] = v
-    return {"path": str(path), "config": out, "redacted": redact}
+    return {"path": str(path), "config": out, "redacted": redact, "setup_hints": _setup_hints(out)}
 
 
 @app.put("/api/config")
 def api_config_put(body: ConfigUpdateBody, request: Request):
-    _check_token(request)
+    require_auth(request)
     path = resolve_config_path()
-    # write to data dir if possible
-    if path == APP_HOME / "config.example.json" or str(path).endswith("config.example.json"):
+    if path.name == "config.example.json":
         path = DATA_DIR / "config.json"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     existing: dict[str, Any] = {}
@@ -482,21 +709,25 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
     for k, v in (body.config or {}).items():
         if str(k).startswith("//"):
             continue
-        # skip unchanged redacted placeholders
         if k in secret_keys and isinstance(v, str) and "*" in v and k in existing:
             if mask_secret(str(existing.get(k, ""))) == v:
                 continue
         merged[k] = v
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # keep app symlink/copy in sync
     app_cfg = APP_HOME / "config.json"
     try:
-        if app_cfg.is_symlink() or app_cfg.exists():
-            if app_cfg.resolve() != path.resolve():
+        if app_cfg.exists() or app_cfg.is_symlink():
+            if not app_cfg.is_symlink():
                 app_cfg.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         else:
-            app_cfg.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            # symlink into app home when possible
+            try:
+                if app_cfg.exists():
+                    app_cfg.unlink()
+                app_cfg.symlink_to(path)
+            except Exception:
+                app_cfg.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     except Exception:
         pass
     return {"ok": True, "path": str(path)}
@@ -504,9 +735,9 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
 
 @app.post("/api/jobs/register")
 def api_job_register(body: RegisterBody, request: Request):
-    _check_token(request)
+    require_auth(request)
     if jobs.is_running():
-        raise HTTPException(409, "任务运行中")
+        raise HTTPException(409, "?????")
     cmd = [
         sys.executable,
         "-u",
@@ -530,9 +761,9 @@ def api_job_register(body: RegisterBody, request: Request):
 
 @app.post("/api/jobs/backfill")
 def api_job_backfill(body: BackfillBody, request: Request):
-    _check_token(request)
+    require_auth(request)
     if jobs.is_running():
-        raise HTTPException(409, "任务运行中")
+        raise HTTPException(409, "?????")
     script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
     cmd = [
         sys.executable,
@@ -559,14 +790,14 @@ def api_job_backfill(body: BackfillBody, request: Request):
 
 @app.post("/api/jobs/stop")
 def api_job_stop(request: Request):
-    _check_token(request)
+    require_auth(request)
     stopped = jobs.stop()
     return {"ok": True, "stopped": stopped, "job": jobs.status()}
 
 
 @app.get("/api/download/accounts")
 def download_accounts(request: Request):
-    _check_token(request)
+    require_auth(request)
     path = resolve_accounts_path()
     if not path.is_file():
         raise HTTPException(404, "accounts file not found")
@@ -580,6 +811,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "cpa_auths").mkdir(parents=True, exist_ok=True)
+    init_runtime_token()
     import uvicorn
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
