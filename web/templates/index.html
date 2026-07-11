@@ -123,18 +123,6 @@
               <label>path token
                 <input type="text" id="q-cloudflare_path_token" placeholder="/api/token" />
               </label>
-              <label>CPA proxy
-                <input type="text" id="q-cpa_proxy" placeholder="direct" />
-              </label>
-              <label>CPA export
-                <select id="q-cpa_export_enabled"><option value="true">true</option><option value="false">false</option></select>
-              </label>
-              <label>CPA headless
-                <select id="q-cpa_headless"><option value="false">false</option><option value="true">true</option></select>
-              </label>
-              <label class="field-full">CPA base_url
-                <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
-              </label>
               <label class="field-full">CloudMail URL
                 <input type="text" id="q-cloudmail_url" />
               </label>
@@ -146,6 +134,52 @@
               </label>
             </div>
           </details>
+        </form>
+      </div>
+
+      
+      <div class="card wide">
+        <div class="card-head">
+          <h2>CPA / Grok 4.5 配置</h2>
+          <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
+        </div>
+        <p class="hint">注册成功后银 OIDC 并可选上传到 CLIProxyAPI。容器内建议 headless=false。</p>
+        <form id="form-cpa" class="form">
+          <div class="quick-grid">
+            <label>CPA export <code>cpa_export_enabled</code>
+              <select id="q-cpa_export_enabled">
+                <option value="true" selected>true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+            <label>CPA headless <code>cpa_headless</code>
+              <select id="q-cpa_headless">
+                <option value="false" selected>false (推荐)</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+            <label class="field-full">CPA base_url <code>cpa_base_url</code>
+              <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
+            </label>
+            <label>CPA proxy <code>cpa_proxy</code>
+              <input type="text" id="q-cpa_proxy" placeholder="direct / empty=use proxy" />
+            </label>
+            <label>auth dir <code>cpa_auth_dir</code>
+              <input type="text" id="q-cpa_auth_dir" placeholder="./cpa_auths" />
+            </label>
+            <label>management upload
+              <select id="q-cpa_management_upload_enabled">
+                <option value="false" selected>false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+            <label class="field-full">management base <code>cpa_management_base</code>
+              <input type="text" id="q-cpa_management_base" placeholder="http://192.168.x.x:8317" />
+            </label>
+            <label class="field-full">management key <code>cpa_management_key</code>
+              <input type="password" id="q-cpa_management_key" placeholder="管理密码" autocomplete="off" />
+            </label>
+          </div>
         </form>
       </div>
 
@@ -171,7 +205,7 @@
 
       <div class="card">
         <details class="advanced fold-card" id="backfill-box">
-          <summary>补认证 Backfill（高级，默认折叠）</summary>
+          <summary class="summary-left">补认证 Backfill（高级，默认折叠）</summary>
           <form id="form-backfill" class="form">
             <label>limit (0=全部缺失)
               <input type="number" name="limit" value="1" min="0" max="5000" />
@@ -211,7 +245,7 @@
 
       <div class="card wide">
         <details class="advanced fold-card" id="json-box">
-          <summary><span>完整 config.json（高级，默认折叠）</span></summary>
+          <summary class="summary-left"><span>完整 config.json（高级，默认折叠）</span></summary>
           <div class="row" style="margin: 8px 0 10px; justify-content: flex-end;">
             <button id="btn-save-config" class="btn primary sm" type="button">保存 JSON</button>
           </div>

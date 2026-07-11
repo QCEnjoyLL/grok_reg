@@ -91,6 +91,10 @@
     setVal("q-cpa_export_enabled", String(cfg.cpa_export_enabled !== false));
     setVal("q-cpa_headless", String(!!cfg.cpa_headless));
     setVal("q-cpa_base_url", cfg.cpa_base_url || "https://cli-chat-proxy.grok.com/v1");
+    setVal("q-cpa_auth_dir", cfg.cpa_auth_dir || "./cpa_auths");
+    setVal("q-cpa_management_upload_enabled", String(!!cfg.cpa_management_upload_enabled));
+    setVal("q-cpa_management_base", cfg.cpa_management_base || "");
+    setVal("q-cpa_management_key", cfg.cpa_management_key || "");
     setVal("q-cloudmail_url", cfg.cloudmail_url || "");
     setVal("q-cloudmail_admin_email", cfg.cloudmail_admin_email || "");
     setVal("q-cloudmail_password", cfg.cloudmail_password || "");
@@ -112,6 +116,9 @@
       cpa_export_enabled: bool(getVal("q-cpa_export_enabled") || "true"),
       cpa_headless: bool(getVal("q-cpa_headless") || "false"),
       cpa_base_url: getVal("q-cpa_base_url") || "https://cli-chat-proxy.grok.com/v1",
+      cpa_auth_dir: getVal("q-cpa_auth_dir") || "./cpa_auths",
+      cpa_management_upload_enabled: bool(getVal("q-cpa_management_upload_enabled") || "false"),
+      cpa_management_base: getVal("q-cpa_management_base"),
       cloudmail_url: getVal("q-cloudmail_url"),
       cloudmail_admin_email: getVal("q-cloudmail_admin_email"),
     };
@@ -119,6 +126,8 @@
     if (key && !key.includes("*")) out.cloudflare_api_key = key;
     const mkey = getVal("q-moemail_api_key");
     if (mkey && !mkey.includes("*")) out.moemail_api_key = mkey;
+    const cpaKey = getVal("q-cpa_management_key");
+    if (cpaKey && !cpaKey.includes("*")) out.cpa_management_key = cpaKey;
     const cmp = getVal("q-cloudmail_password");
     if (cmp && !cmp.includes("*")) out.cloudmail_password = cmp;
     return out;
@@ -199,10 +208,18 @@
       fast: fd.get("fast") === "on",
     };
     try {
-      await api("/api/jobs/register", { method: "POST", body: JSON.stringify(body) });
-      toast(__S.reg_started);
-      refreshStatus();
-    } catch (err) { toast(String(err.message || err)); }
+      toast("[ui] starting register...");
+      const res = await api("/api/jobs/register", { method: "POST", body: JSON.stringify(body) });
+      toast(__S.reg_started + " pid=" + ((res.job && res.job.pid) || "?"));
+      await refreshStatus();
+      // open log area attention
+      const log = document.getElementById("log");
+      if (log) log.scrollTop = log.scrollHeight;
+    } catch (err) {
+      const msg = String(err.message || err);
+      toast("register failed: " + msg);
+      alert("register failed: " + msg);
+    }
   });
 
   document.getElementById("form-backfill").addEventListener("submit", async (e) => {
@@ -248,6 +265,27 @@
       refreshStatus();
       refreshConfig();
     } catch (err) { toast(__S.save_fail + ": " + (err.message || err)); }
+  });
+
+  document.getElementById("btn-save-cpa")?.addEventListener("click", async () => {
+    try {
+      const patch = collectQuickConfig();
+      // only CPA-related keys
+      const cpaPatch = {
+        cpa_export_enabled: patch.cpa_export_enabled,
+        cpa_headless: patch.cpa_headless,
+        cpa_base_url: patch.cpa_base_url,
+        cpa_proxy: patch.cpa_proxy,
+        cpa_auth_dir: patch.cpa_auth_dir,
+        cpa_management_upload_enabled: patch.cpa_management_upload_enabled,
+        cpa_management_base: patch.cpa_management_base,
+      };
+      if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
+      await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });
+      toast("CPA " + __S.cfg_saved);
+      await refreshConfig();
+      await refreshStatus();
+    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err)); }
   });
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {

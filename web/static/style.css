@@ -190,6 +190,7 @@ details.advanced summary {
   color: var(--muted);
   font-size: 0.9rem;
   user-select: none;
+  text-align: left;
 }
 details.advanced[open] summary {
   margin-bottom: 4px;
@@ -207,11 +208,13 @@ details.fold-card > summary {
   list-style: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
   color: var(--text);
   font-weight: 600;
   font-size: 0.95rem;
+  text-align: left;
+  width: 100%;
 }
 details.fold-card > summary::-webkit-details-marker { display: none; }
 details.fold-card > summary::before {

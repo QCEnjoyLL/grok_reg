@@ -28,8 +28,22 @@ else
 fi
 
 # Lightweight WM so Chromium has a window manager (helps some CF/page layouts)
+# Avoid fluxbox first-run wallpaper wizard (fbsetbg xmessage)
+mkdir -p /root/.fluxbox
+if [[ ! -f /root/.fluxbox/init ]]; then
+  cat > /root/.fluxbox/init <<'EOF'
+session.screen0.rootCommand: xsetroot -solid #0b1020
+session.screen0.toolbar.visible: false
+EOF
+fi
 if ! pgrep -x fluxbox >/dev/null 2>&1; then
+  # solid background first
+  if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid "#0b1020" >/dev/null 2>&1 || true
+  fi
   fluxbox >"${LOG_DIR}/fluxbox.log" 2>&1 &
+  sleep 0.3
+  xsetroot -solid "#0b1020" >/dev/null 2>&1 || true
 fi
 
 # VNC
