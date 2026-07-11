@@ -218,19 +218,113 @@
     document.getElementById("set-novnc-port").value = s.novnc_port || "";
     if (s.novnc_url) applyNovncUrl(s.novnc_url);
   }
+  let __ws = null;
+  let __wsWaiters = [];
+
   function connectWs() {
     const t = getToken();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const q = t ? `?token=${encodeURIComponent(t)}` : "";
     const ws = new WebSocket(`${proto}://${location.host}/ws/logs${q}`);
+    __ws = ws;
+    ws.onopen = () => {
+      try { ws.send(JSON.stringify({ op: "hello" })); } catch (_) {}
+    };
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        appendLines(msg.lines || []);
+        if (msg.lines && msg.lines.length) appendLines(msg.lines);
         if (msg.status) setBadge(msg.status);
+        // resolve pending command waiters
+        if (msg.type === "ack" || msg.type === "error") {
+          const waiters = __wsWaiters.slice();
+          __wsWaiters = [];
+          waiters.forEach((w) => {
+            try { w(msg); } catch (_) {}
+          });
+        }
       } catch (_) {}
     };
-    ws.onclose = () => setTimeout(connectWs, 2500);
+    ws.onclose = () => {
+      __ws = null;
+      const waiters = __wsWaiters.slice();
+      __wsWaiters = [];
+      waiters.forEach((w) => {
+        try { w({ type: "error", detail: "websocket closed" }); } catch (_) {}
+      });
+      setTimeout(connectWs, 2500);
+    };
+  }
+
+  function wsSend(op, payload = {}, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      if (!__ws || __ws.readyState !== WebSocket.OPEN) {
+        reject(new Error("websocket not ready"));
+        return;
+      }
+      const timer = setTimeout(() => {
+        __wsWaiters = __wsWaiters.filter((w) => w !== onMsg);
+        reject(new Error("websocket timeout"));
+      }, timeoutMs);
+      function onMsg(msg) {
+        clearTimeout(timer);
+        if (msg.type === "error") reject(new Error(msg.detail || "ws error"));
+        else resolve(msg);
+      }
+      __wsWaiters.push(onMsg);
+      try {
+        __ws.send(JSON.stringify({ op, ...payload }));
+      } catch (err) {
+        clearTimeout(timer);
+        __wsWaiters = __wsWaiters.filter((w) => w !== onMsg);
+        reject(err);
+      }
+    });
+  }
+
+  function isNetErr(err) {
+    const m = String((err && err.message) || err || "").toLowerCase();
+    return m.includes("failed to fetch") || m.includes("network") || m.includes("websocket") || m.includes("timeout") || m.includes("load failed");
+  }
+
+  async function startJob(body) {
+    // 1) PUT /api/task - same method as working /api/config saves
+    try {
+      toast("[ui] starting via PUT /api/task ...");
+      return await api("/api/task", {
+        method: "PUT",
+        body: JSON.stringify({ action: "start", ...body }),
+      });
+    } catch (e1) {
+      if (!isNetErr(e1)) throw e1; // e.g. 409 busy
+      // 2) WebSocket command — WS is already open for logs
+      try {
+        toast("[ui] PUT network fail, trying websocket ...");
+        return await wsSend("start", body);
+      } catch (e2) {
+        // 3) legacy POST
+        toast("[ui] WS failed, trying POST /api/jobs/start ...");
+        return await api("/api/jobs/start", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      }
+    }
+  }
+
+  async function stopJob() {
+    try {
+      return await api("/api/task", {
+        method: "PUT",
+        body: JSON.stringify({ action: "stop" }),
+      });
+    } catch (e1) {
+      if (!isNetErr(e1)) throw e1;
+      try { return await wsSend("stop", {}); }
+      catch (e2) {
+        return await api("/api/jobs/stop", { method: "POST", body: "{}" });
+      }
+    }
   }
 
   document.getElementById("form-register").addEventListener("submit", async (e) => {
@@ -246,8 +340,7 @@
       fast: fd.get("fast") === "on",
     };
     try {
-      toast("[ui] starting job via /api/jobs/start ...");
-      const res = await api("/api/jobs/start", { method: "POST", body: JSON.stringify(body) });
+      const res = await startJob(body);
       toast(__S.reg_started + " pid=" + ((res.job && res.job.pid) || "?"));
       await refreshStatus();
       const log = document.getElementById("log");
@@ -272,7 +365,12 @@
       headless: fd.get("headless") === "on",
     };
     try {
-      await api("/api/jobs/backfill", { method: "POST", body: JSON.stringify(body) });
+      try {
+        await api("/api/task", { method: "PUT", body: JSON.stringify({ action: "backfill", ...body }) });
+      } catch (_) {
+        try { await wsSend("backfill", body); }
+        catch (__) { await api("/api/jobs/backfill", { method: "POST", body: JSON.stringify(body) }); }
+      }
       toast(__S.bf_started);
       refreshStatus();
     } catch (err) { toast(String(err.message || err)); }
@@ -280,7 +378,7 @@
 
   document.getElementById("btn-stop").addEventListener("click", async () => {
     try {
-      await api("/api/jobs/stop", { method: "POST", body: "{}" });
+      await stopJob();
       toast(__S.stop_req);
     } catch (err) { toast(String(err.message || err)); }
   });

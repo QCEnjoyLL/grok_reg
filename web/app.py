@@ -595,31 +595,115 @@ def api_logs(request: Request, tail: int = Query(200, ge=1, le=4000)):
     return {"lines": jobs.get_logs(tail)}
 
 
-@app.websocket("/ws/logs")
-async def ws_logs(ws: WebSocket, token: str = ""):
+def _ws_extract_token(ws: WebSocket, token: str = "") -> str:
     got = token or ws.headers.get("x-web-token") or ""
-    # also cookie header
     cookie = ws.headers.get("cookie") or ""
     if "web_token=" in cookie and not got:
         for part in cookie.split(";"):
             part = part.strip()
             if part.startswith("web_token="):
                 got = part.split("=", 1)[1]
+    return (got or "").strip()
+
+
+def _handle_task_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Start/stop/backfill jobs from REST or WebSocket (shared)."""
+    action = (action or "").strip().lower()
+    if action in ("start", "run", "register", "job_start"):
+        body = RegisterBody(
+            extra=int(payload.get("extra", 1) or 1),
+            threads=int(payload.get("threads", 1) or 1),
+            mint_workers=int(payload.get("mint_workers", -1) if payload.get("mint_workers") is not None else -1),
+            fast=bool(payload.get("fast", True)),
+            inline_mint=bool(payload.get("inline_mint", False)),
+        )
+        return _start_register_job(body)
+    if action in ("backfill", "job_backfill"):
+        body = BackfillBody(
+            limit=int(payload.get("limit", 1) or 1),
+            email=str(payload.get("email", "") or ""),
+            timeout=int(payload.get("timeout", 300) or 300),
+            probe=bool(payload.get("probe", True)),
+            headless=bool(payload.get("headless", False)),
+            sleep=float(payload.get("sleep", 3.0) or 3.0),
+        )
+        if jobs.is_running():
+            raise HTTPException(409, "任务运行中")
+        script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
+        cmd = [
+            sys.executable,
+            "-u",
+            str(script),
+            "--limit",
+            str(body.limit),
+            "--timeout",
+            str(body.timeout),
+            "--sleep",
+            str(body.sleep),
+            "--out-dir",
+            str(resolve_cpa_dir()),
+        ]
+        if body.probe:
+            cmd.append("--probe")
+        if body.headless:
+            cmd.append("--headless")
+        if body.email.strip():
+            cmd.extend(["--email", body.email.strip()])
+        jobs.start("backfill", cmd)
+        return {"ok": True, "job": jobs.status()}
+    if action in ("stop", "job_stop"):
+        stopped = jobs.stop()
+        return {"ok": True, "stopped": stopped, "job": jobs.status()}
+    raise HTTPException(400, f"unknown action: {action}")
+
+
+@app.websocket("/ws/logs")
+async def ws_logs(ws: WebSocket, token: str = ""):
+    got = _ws_extract_token(ws, token)
     if not _token_ok(got):
         await ws.close(code=4401)
         return
     await ws.accept()
     last = 0
-    try:
+
+    async def _pump_logs() -> None:
+        nonlocal last
         while True:
             lines = jobs.get_logs(0)
             if len(lines) > last:
                 chunk = lines[last:]
                 last = len(lines)
-                await ws.send_json({"lines": chunk, "status": jobs.status()})
+                await ws.send_json({"type": "logs", "lines": chunk, "status": jobs.status()})
             else:
-                await ws.send_json({"lines": [], "status": jobs.status()})
+                await ws.send_json({"type": "ping", "lines": [], "status": jobs.status()})
             await asyncio.sleep(0.8)
+
+    async def _recv_cmds() -> None:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                await ws.send_json({"type": "error", "ok": False, "detail": "invalid json"})
+                continue
+            op = str(msg.get("op") or msg.get("action") or "").strip().lower()
+            if op in ("ping", "hello"):
+                await ws.send_json({"type": "pong", "status": jobs.status()})
+                continue
+            if not op:
+                await ws.send_json({"type": "error", "ok": False, "detail": "missing op"})
+                continue
+            try:
+                # job start can be sync/blocking briefly; run in thread
+                result = await asyncio.to_thread(_handle_task_action, op, msg)
+                await ws.send_json({"type": "ack", "op": op, **result})
+            except HTTPException as he:
+                await ws.send_json({"type": "error", "ok": False, "op": op, "detail": he.detail, "status_code": he.status_code})
+            except Exception as exc:
+                await ws.send_json({"type": "error", "ok": False, "op": op, "detail": str(exc)})
+
+    try:
+        await asyncio.gather(_pump_logs(), _recv_cmds())
     except WebSocketDisconnect:
         return
     except Exception:
@@ -784,8 +868,34 @@ def _start_register_job(body: RegisterBody) -> dict:
     return {"ok": True, "job": jobs.status()}
 
 
+class TaskBody(BaseModel):
+    action: str = "start"
+    extra: int = Field(1, ge=1, le=500)
+    threads: int = Field(1, ge=1, le=10)
+    mint_workers: int = Field(-1, ge=-1, le=10)
+    fast: bool = True
+    inline_mint: bool = False
+    limit: int = Field(1, ge=0, le=5000)
+    email: str = ""
+    timeout: int = Field(300, ge=30, le=3600)
+    probe: bool = True
+    headless: bool = False
+    sleep: float = Field(3.0, ge=0, le=120)
+
+
+@app.put("/api/task")
+@app.post("/api/task")
+def api_task(body: TaskBody, request: Request):
+    """Unified job control. PUT preferred: some networks drop POST /api/jobs/*."""
+    require_auth(request)
+    payload = body.model_dump()
+    action = payload.pop("action", "start")
+    return _handle_task_action(action, payload)
+
+
 @app.post("/api/jobs/start")
 def api_job_start(body: RegisterBody, request: Request):
+
     """Start registration job. Prefer this path (avoids adblock on /register)."""
     require_auth(request)
     return _start_register_job(body)
