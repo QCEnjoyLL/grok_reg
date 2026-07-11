@@ -759,9 +759,7 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
     return {"ok": True, "path": str(path)}
 
 
-@app.post("/api/jobs/register")
-def api_job_register(body: RegisterBody, request: Request):
-    require_auth(request)
+def _start_register_job(body: RegisterBody) -> dict:
     if jobs.is_running():
         raise HTTPException(409, "任务运行中")
     cmd = [
@@ -781,8 +779,29 @@ def api_job_register(body: RegisterBody, request: Request):
         cmd.append("--no-fast")
     if body.inline_mint:
         cmd.append("--inline-mint")
-    jobs.start("register", cmd)
+    # kind uses "run" so UI/logs avoid adblock-sensitive words
+    jobs.start("run", cmd)
     return {"ok": True, "job": jobs.status()}
+
+
+@app.post("/api/jobs/start")
+def api_job_start(body: RegisterBody, request: Request):
+    """Start registration job. Prefer this path (avoids adblock on /register)."""
+    require_auth(request)
+    return _start_register_job(body)
+
+
+@app.post("/api/jobs/run")
+def api_job_run(body: RegisterBody, request: Request):
+    require_auth(request)
+    return _start_register_job(body)
+
+
+@app.post("/api/jobs/register")
+def api_job_register(body: RegisterBody, request: Request):
+    # legacy alias; some browsers/extensions block URLs containing "register"
+    require_auth(request)
+    return _start_register_job(body)
 
 
 @app.post("/api/jobs/backfill")

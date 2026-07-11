@@ -17,11 +17,17 @@
     return u.pathname + u.search;
   }
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
-      ...opts,
-      headers: { ...authHeaders(!(opts.body instanceof FormData)), ...(opts.headers || {}) },
-      credentials: "same-origin",
-    });
+    let res;
+    try {
+      res = await fetch(path, {
+        ...opts,
+        headers: { ...authHeaders(!(opts.body instanceof FormData)), ...(opts.headers || {}) },
+        credentials: "same-origin",
+      });
+    } catch (netErr) {
+      const m = String((netErr && netErr.message) || netErr || "network error");
+      throw new Error(m + " @ " + path + " (网络中断/广告拦截/反代超时，可试 /api/jobs/start)");
+    }
     if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
@@ -229,7 +235,10 @@
 
   document.getElementById("form-register").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
+    const form = e.target;
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "启动中..."; }
+    const fd = new FormData(form);
     const body = {
       extra: Number(fd.get("extra") || 1),
       threads: Number(fd.get("threads") || 1),
@@ -237,17 +246,18 @@
       fast: fd.get("fast") === "on",
     };
     try {
-      toast("[ui] starting register...");
-      const res = await api("/api/jobs/register", { method: "POST", body: JSON.stringify(body) });
+      toast("[ui] starting job via /api/jobs/start ...");
+      const res = await api("/api/jobs/start", { method: "POST", body: JSON.stringify(body) });
       toast(__S.reg_started + " pid=" + ((res.job && res.job.pid) || "?"));
       await refreshStatus();
-      // open log area attention
       const log = document.getElementById("log");
       if (log) log.scrollTop = log.scrollHeight;
     } catch (err) {
       const msg = String(err.message || err);
-      toast("register failed: " + msg);
-      alert("register failed: " + msg);
+      toast("start failed: " + msg, "err");
+      alert("start failed: " + msg);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "开始注册"; }
     }
   });
 

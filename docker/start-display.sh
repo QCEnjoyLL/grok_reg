@@ -28,22 +28,37 @@ else
 fi
 
 # Lightweight WM so Chromium has a window manager (helps some CF/page layouts)
-# Avoid fluxbox first-run wallpaper wizard (fbsetbg xmessage)
+# Avoid fluxbox first-run wallpaper wizard (fbsetbg / xmessage)
 mkdir -p /root/.fluxbox
-if [[ ! -f /root/.fluxbox/init ]]; then
-  cat > /root/.fluxbox/init <<'EOF'
+# Always force solid root; overwrite init each boot so wizard never returns
+cat > /root/.fluxbox/init <<'EOF'
 session.screen0.rootCommand: xsetroot -solid #0b1020
 session.screen0.toolbar.visible: false
+session.screen0.workspaces: 1
+session.screen0.defaultDeco: NONE
 EOF
+# stub fbsetbg so fluxbox cannot spawn Eterm advice dialog
+if command -v fbsetbg >/dev/null 2>&1 || [[ ! -e /usr/bin/fbsetbg ]]; then
+  cat > /usr/local/bin/fbsetbg <<'EOF'
+#!/bin/sh
+# no-op wallpaper setter for headless server containers
+exit 0
+EOF
+  chmod +x /usr/local/bin/fbsetbg || true
+  # prefer our stub on PATH
+  export PATH="/usr/local/bin:${PATH}"
 fi
+# kill leftover wallpaper wizard dialogs if any
+pkill -f 'fbsetbg|xmessage' >/dev/null 2>&1 || true
 if ! pgrep -x fluxbox >/dev/null 2>&1; then
-  # solid background first
   if command -v xsetroot >/dev/null 2>&1; then
     xsetroot -solid "#0b1020" >/dev/null 2>&1 || true
   fi
-  fluxbox >"${LOG_DIR}/fluxbox.log" 2>&1 &
-  sleep 0.3
+  PATH="/usr/local/bin:${PATH}" fluxbox >"${LOG_DIR}/fluxbox.log" 2>&1 &
+  sleep 0.4
   xsetroot -solid "#0b1020" >/dev/null 2>&1 || true
+  # dismiss any leftover dialog once
+  pkill -f 'xmessage|fbsetbg' >/dev/null 2>&1 || true
 fi
 
 # VNC
