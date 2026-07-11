@@ -540,26 +540,46 @@ def api_status(request: Request):
 
 
 def _setup_hints(cfg: dict[str, Any]) -> list[str]:
-    hints = []
-    provider = str(cfg.get("email_provider") or "")
+    """Human-friendly missing-config checklist for the dashboard banner."""
+    hints: list[str] = []
+    provider = str(cfg.get("email_provider") or "cloudflare").strip().lower()
+
+    def _is_placeholder(val: str) -> bool:
+        v = (val or "").strip().lower()
+        if not v:
+            return True
+        bad_tokens = (
+            "example.com",
+            "your-temp-mail",
+            "yourdomain",
+            "xxxx",
+            "127.0.0.1:7890",
+            "localhost",
+        )
+        return any(t in v for t in bad_tokens)
+
     if provider == "cloudflare":
-        if not cfg.get("cloudflare_api_base") or "example.com" in str(cfg.get("cloudflare_api_base") or "") or str(cfg.get("cloudflare_api_base") or "").endswith("xxxx"):
-            hints.append("请配置 cloudflare_api_base（临时邮箱 Worker）")
-        if not cfg.get("defaultDomains") or cfg.get("defaultDomains") in ("example.com", "xx.shop"):
-            hints.append("请配置 defaultDomains 为真实可用域名")
+        base = str(cfg.get("cloudflare_api_base") or "")
+        if _is_placeholder(base):
+            hints.append('还差第1项：临时邮箱 Worker 地址 cloudflare_api_base')
+        domains = str(cfg.get("defaultDomains") or "")
+        if _is_placeholder(domains) or domains in ("example.com", "xx.shop"):
+            hints.append('还差第2项：真实邮箱域名 defaultDomains')
     elif provider == "cloudmail":
-        if not cfg.get("cloudmail_url"):
-            hints.append("请配置 cloudmail_url")
-    else:
-        if not provider:
-            hints.append("请设置 email_provider（cloudflare/cloudmail/duckmail/yyds）")
+        if _is_placeholder(str(cfg.get("cloudmail_url") or "")):
+            hints.append('还差 CloudMail 地址 cloudmail_url')
+    elif not provider:
+        hints.append('请选择邮箱提供商 email_provider')
+
     proxy = str(cfg.get("proxy") or "")
-    if not proxy or proxy in ("http://127.0.0.1:7890",):
-        hints.append("建议配置 proxy 为服务器可访问的代理")
-    if cfg.get("cpa_export_enabled", True) and cfg.get("cpa_headless", False):
-        hints.append("cpa_headless 建议 false（容器内 Xvfb 有头）")
+    if _is_placeholder(proxy) or proxy in ("http://127.0.0.1:7890",):
+        hints.append('还差第3项：服务器可访问的 proxy 代理')
+
+    if cfg.get("cpa_export_enabled", True) and bool(cfg.get("cpa_headless", False)):
+        hints.append('建议 CPA headless=false（容器有头更稳）')
+
     if not hints:
-        hints.append("关键配置看起来已填，可尝试注册 1 个号验证")
+        hints.append('三项关键配置看起来可用，可以开始注册 1 个号试试')
     return hints
 
 

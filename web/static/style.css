@@ -178,3 +178,20 @@ th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background
   .top { flex-direction: column; align-items: flex-start; }
   .field-full { grid-column: auto; }
 }
+
+details.advanced {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.02);
+}
+details.advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  user-select: none;
+}
+details.advanced[open] summary {
+  margin-bottom: 4px;
+  color: var(--text);
+}
