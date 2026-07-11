@@ -302,9 +302,9 @@ def health():
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return TEMPLATES.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "title": DASHBOARD_TITLE,
             "need_token": bool(WEB_TOKEN),
             "novnc_port": os.environ.get("NOVNC_PORT", "6080"),
