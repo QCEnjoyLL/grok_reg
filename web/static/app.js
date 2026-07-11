@@ -1,18 +1,11 @@
 (() => {
-  function getToken() {
-    return localStorage.getItem("web_token") || "";
-  }
-  function setToken(t) {
-    localStorage.setItem("web_token", t || "");
-  }
+  function getToken() { return localStorage.getItem("web_token") || ""; }
+  function setToken(t) { localStorage.setItem("web_token", t || ""); }
   function authHeaders(json = true) {
     const h = {};
     if (json) h["Content-Type"] = "application/json";
     const t = getToken();
-    if (t) {
-      h["Authorization"] = `Bearer ${t}`;
-      h["X-Web-Token"] = t;
-    }
+    if (t) { h["Authorization"] = `Bearer ${t}`; h["X-Web-Token"] = t; }
     return h;
   }
   function withToken(url) {
@@ -28,10 +21,7 @@
       headers: { ...authHeaders(!(opts.body instanceof FormData)), ...(opts.headers || {}) },
       credentials: "same-origin",
     });
-    if (res.status === 401) {
-      location.href = "/login";
-      throw new Error("unauthorized");
-    }
+    if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
     return data;
@@ -65,24 +55,18 @@
   }
   function esc(s) {
     return String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
+      .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
   }
   function applyNovncUrl(url) {
     const a = document.getElementById("link-novnc");
     const prev = document.getElementById("novnc-preview");
     if (a && url) a.href = url;
-    if (prev && url) {
-      prev.href = url;
-      prev.textContent = url;
-    }
+    if (prev && url) { prev.href = url; prev.textContent = url; }
   }
   function setVal(id, v) {
     const el = document.getElementById(id);
-    if (!el) return;
-    if (v === undefined || v === null) return;
+    if (!el || v === undefined || v === null) return;
     el.value = String(v);
   }
   function getVal(id) {
@@ -131,10 +115,10 @@
       cloudmail_url: getVal("q-cloudmail_url"),
       cloudmail_admin_email: getVal("q-cloudmail_admin_email"),
     };
-    const mkey = getVal("q-moemail_api_key");
-    if (mkey && !mkey.includes("*")) out.moemail_api_key = mkey;
     const key = getVal("q-cloudflare_api_key");
     if (key && !key.includes("*")) out.cloudflare_api_key = key;
+    const mkey = getVal("q-moemail_api_key");
+    if (mkey && !mkey.includes("*")) out.moemail_api_key = mkey;
     const cmp = getVal("q-cloudmail_password");
     if (cmp && !cmp.includes("*")) out.cloudmail_password = cmp;
     return out;
@@ -152,10 +136,8 @@
     if (box && st.setup_hints) {
       if (st.setup_hints.length) {
         box.hidden = false;
-        box.innerHTML = "<strong>" + esc(__S.precheck) + "</strong> " + st.setup_hints.map(esc).join(" · ");
-      } else {
-        box.hidden = true;
-      }
+        box.innerHTML = "<strong>" + esc(__S.precheck) + "</strong> " + st.setup_hints.map(esc).join(" ? ");
+      } else box.hidden = true;
     }
     return st;
   }
@@ -166,9 +148,7 @@
       box.innerHTML = "<p class='hint'>" + esc(__S.no_accounts) + "</p>";
       return;
     }
-    const rows = data.items
-      .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? "?" : "-"}</td></tr>`)
-      .join("");
+    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? "?" : "-"}</td></tr>`).join("");
     box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>${esc(__S.password)}</th><th>SSO</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   async function refreshCpa() {
@@ -178,9 +158,7 @@
       box.innerHTML = "<p class='hint'>" + esc(__S.no_cpa) + "</p>";
       return;
     }
-    const rows = data.items
-      .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td></tr>`)
-      .join("");
+    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td></tr>`).join("");
     box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   async function refreshConfig() {
@@ -224,9 +202,7 @@
       await api("/api/jobs/register", { method: "POST", body: JSON.stringify(body) });
       toast(__S.reg_started);
       refreshStatus();
-    } catch (err) {
-      toast(String(err.message || err));
-    }
+    } catch (err) { toast(String(err.message || err)); }
   });
 
   document.getElementById("form-backfill").addEventListener("submit", async (e) => {
@@ -243,26 +219,20 @@
       await api("/api/jobs/backfill", { method: "POST", body: JSON.stringify(body) });
       toast(__S.bf_started);
       refreshStatus();
-    } catch (err) {
-      toast(String(err.message || err));
-    }
+    } catch (err) { toast(String(err.message || err)); }
   });
 
   document.getElementById("btn-stop").addEventListener("click", async () => {
     try {
       await api("/api/jobs/stop", { method: "POST", body: "{}" });
       toast(__S.stop_req);
-    } catch (err) {
-      toast(String(err.message || err));
-    }
+    } catch (err) { toast(String(err.message || err)); }
   });
 
   document.getElementById("btn-refresh").addEventListener("click", async () => {
     try {
       await Promise.all([refreshStatus(), refreshAccounts(), refreshCpa(), refreshSettings(), refreshConfig()]);
-    } catch (err) {
-      toast(String(err.message || err));
-    }
+    } catch (err) { toast(String(err.message || err)); }
   });
 
   document.getElementById("btn-clear-log").addEventListener("click", () => {
@@ -277,29 +247,17 @@
       toast(__S.cfg_saved);
       refreshStatus();
       refreshConfig();
-    } catch (err) {
-      toast(__S.save_fail + ": " + (err.message || err));
-    }
+    } catch (err) { toast(__S.save_fail + ": " + (err.message || err)); }
   });
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {
     try {
       const patch = collectQuickConfig();
-      // merge onto current full config from editor if valid, else patch alone
-      let config = {};
-      try {
-        config = JSON.parse(document.getElementById("config-editor").value || "{}");
-      } catch (_) {
-        config = {};
-      }
-      Object.assign(config, patch);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
       toast(__S.quick_saved);
       await refreshConfig();
       await refreshStatus();
-    } catch (err) {
-      toast(__S.quick_fail + ": " + (err.message || err));
-    }
+    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err)); }
   });
 
   document.getElementById("form-settings").addEventListener("submit", async (e) => {
@@ -317,15 +275,11 @@
       toast(res.token_changed ? __S.set_saved_token : __S.set_saved);
       await refreshSettings();
       applyNovncUrl(res.settings.novnc_url);
-    } catch (err) {
-      toast(__S.set_fail + ": " + (err.message || err));
-    }
+    } catch (err) { toast(__S.set_fail + ": " + (err.message || err)); }
   });
 
   document.getElementById("btn-logout").addEventListener("click", async () => {
-    try {
-      await api("/api/logout", { method: "POST", body: "{}" });
-    } catch (_) {}
+    try { await api("/api/logout", { method: "POST", body: "{}" }); } catch (_) {}
     setToken("");
     location.href = "/login";
   });
@@ -340,9 +294,7 @@
       await refreshSettings();
       const logs = await api("/api/logs?tail=200");
       if (logs.lines) document.getElementById("log").textContent = logs.lines.join("\n");
-    } catch (err) {
-      toast(String(err.message || err));
-    }
+    } catch (err) { toast(String(err.message || err)); }
   }
 
   const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败"};
