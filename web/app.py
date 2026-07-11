@@ -816,13 +816,22 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
         "cpa_management_key",
     }
     merged = dict(existing)
+    cmd_payload = None
     for k, v in (body.config or {}).items():
         if str(k).startswith("//"):
+            continue
+        # control channel piggyback (not persisted)
+        if k in ("_cmd", "__cmd", "_ui_cmd", "__job"):
+            cmd_payload = v
             continue
         if k in secret_keys and isinstance(v, str) and "*" in v and k in existing:
             if mask_secret(str(existing.get(k, ""))) == v:
                 continue
         merged[k] = v
+    # never persist control keys from old files either
+    for k in ("_cmd", "__cmd", "_ui_cmd", "__job"):
+        merged.pop(k, None)
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     app_cfg = APP_HOME / "config.json"
@@ -831,7 +840,6 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
             if not app_cfg.is_symlink():
                 app_cfg.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         else:
-            # symlink into app home when possible
             try:
                 if app_cfg.exists():
                     app_cfg.unlink()
@@ -840,7 +848,22 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
                 app_cfg.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     except Exception:
         pass
-    return {"ok": True, "path": str(path)}
+
+    out: dict[str, Any] = {"ok": True, "path": str(path)}
+    if cmd_payload is not None:
+        if isinstance(cmd_payload, str):
+            action = cmd_payload
+            payload: dict[str, Any] = {}
+        elif isinstance(cmd_payload, dict):
+            action = str(cmd_payload.get("action") or cmd_payload.get("op") or "start")
+            payload = dict(cmd_payload)
+        else:
+            raise HTTPException(400, "invalid _cmd payload")
+        job_result = _handle_task_action(action, payload)
+        out["job_result"] = job_result
+        out["job"] = job_result.get("job")
+        out["cmd"] = action
+    return out
 
 
 def _start_register_job(body: RegisterBody) -> dict:
@@ -948,6 +971,58 @@ def api_job_stop(request: Request):
     require_auth(request)
     stopped = jobs.stop()
     return {"ok": True, "stopped": stopped, "job": jobs.status()}
+
+
+@app.get("/api/go")
+def api_go(
+    request: Request,
+    action: str = Query("start"),
+    extra: int = Query(1, ge=1, le=500),
+    threads: int = Query(1, ge=1, le=10),
+    mint_workers: int = Query(-1, ge=-1, le=10),
+    fast: int = Query(1, ge=0, le=1),
+    limit: int = Query(1, ge=0, le=5000),
+    email: str = Query(""),
+    timeout: int = Query(300, ge=30, le=3600),
+    probe: int = Query(1, ge=0, le=1),
+    headless: int = Query(0, ge=0, le=1),
+):
+    """GET-based job control for networks that block POST/PUT job paths."""
+    require_auth(request)
+    payload: dict[str, Any] = {
+        "extra": extra,
+        "threads": threads,
+        "mint_workers": mint_workers,
+        "fast": bool(fast),
+        "limit": limit,
+        "email": email,
+        "timeout": timeout,
+        "probe": bool(probe),
+        "headless": bool(headless),
+    }
+    return _handle_task_action(action, payload)
+
+
+@app.get("/api/status/do")
+def api_status_do(
+    request: Request,
+    action: str = Query("start"),
+    extra: int = Query(1, ge=1, le=500),
+    threads: int = Query(1, ge=1, le=10),
+    mint_workers: int = Query(-1, ge=-1, le=10),
+    fast: int = Query(1, ge=0, le=1),
+):
+    """Alias under /api/status/* — often allowed when other paths are filtered."""
+    require_auth(request)
+    return _handle_task_action(
+        action,
+        {
+            "extra": extra,
+            "threads": threads,
+            "mint_workers": mint_workers,
+            "fast": bool(fast),
+        },
+    )
 
 
 @app.get("/api/download/accounts")

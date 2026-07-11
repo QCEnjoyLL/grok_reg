@@ -288,41 +288,88 @@
   }
 
   async function startJob(body) {
-    // 1) PUT /api/task - same method as working /api/config saves
+    const extra = Number(body.extra || 1);
+    const threads = Number(body.threads || 1);
+    const mint_workers = Number(body.mint_workers ?? -1);
+    const fast = body.fast !== false;
+
+    // Channel A: GET /api/go - GET works in server logs
     try {
-      toast("[ui] starting via PUT /api/task ...");
-      return await api("/api/task", {
-        method: "PUT",
-        body: JSON.stringify({ action: "start", ...body }),
+      toast("[ui] starting via GET /api/go ...");
+      const q = new URLSearchParams({
+        action: "start",
+        extra: String(extra),
+        threads: String(threads),
+        mint_workers: String(mint_workers),
+        fast: fast ? "1" : "0",
       });
-    } catch (e1) {
-      if (!isNetErr(e1)) throw e1; // e.g. 409 busy
-      // 2) WebSocket command — WS is already open for logs
-      try {
-        toast("[ui] PUT network fail, trying websocket ...");
-        return await wsSend("start", body);
-      } catch (e2) {
-        // 3) legacy POST
-        toast("[ui] WS failed, trying POST /api/jobs/start ...");
-        return await api("/api/jobs/start", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-      }
+      return await api("/api/go?" + q.toString());
+    } catch (eA) {
+      if (!isNetErr(eA)) throw eA;
+    }
+
+    // Channel B: GET /api/status/do
+    try {
+      toast("[ui] trying GET /api/status/do ...");
+      const q = new URLSearchParams({
+        action: "start",
+        extra: String(extra),
+        threads: String(threads),
+        mint_workers: String(mint_workers),
+        fast: fast ? "1" : "0",
+      });
+      return await api("/api/status/do?" + q.toString());
+    } catch (eB) {
+      if (!isNetErr(eB)) throw eB;
+    }
+
+    // Channel C: PUT /api/config with _cmd (your config saves already work)
+    try {
+      toast("[ui] trying PUT /api/config _cmd ...");
+      const res = await api("/api/config", {
+        method: "PUT",
+        body: JSON.stringify({
+          config: {
+            _cmd: { action: "start", extra, threads, mint_workers, fast },
+          },
+        }),
+      });
+      if (res.job || res.job_result) return res.job_result || res;
+      return res;
+    } catch (eC) {
+      if (!isNetErr(eC)) throw eC;
+    }
+
+    // Channel D: WebSocket
+    try {
+      toast("[ui] trying websocket ...");
+      return await wsSend("start", { extra, threads, mint_workers, fast });
+    } catch (eD) {
+      // Channel E: legacy
+      toast("[ui] trying POST /api/jobs/start ...");
+      return await api("/api/jobs/start", {
+        method: "POST",
+        body: JSON.stringify({ extra, threads, mint_workers, fast }),
+      });
     }
   }
 
   async function stopJob() {
     try {
-      return await api("/api/task", {
-        method: "PUT",
-        body: JSON.stringify({ action: "stop" }),
-      });
+      return await api("/api/go?action=stop");
     } catch (e1) {
       if (!isNetErr(e1)) throw e1;
-      try { return await wsSend("stop", {}); }
-      catch (e2) {
-        return await api("/api/jobs/stop", { method: "POST", body: "{}" });
+      try {
+        return await api("/api/config", {
+          method: "PUT",
+          body: JSON.stringify({ config: { _cmd: { action: "stop" } } }),
+        });
+      } catch (e2) {
+        if (!isNetErr(e2)) throw e2;
+        try { return await wsSend("stop", {}); }
+        catch (e3) {
+          return await api("/api/jobs/stop", { method: "POST", body: "{}" });
+        }
       }
     }
   }
