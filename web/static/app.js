@@ -1,4 +1,5 @@
 (() => {
+  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "成功", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
   function getToken() { return localStorage.getItem("web_token") || ""; }
   function setToken(t) { localStorage.setItem("web_token", t || ""); }
   function authHeaders(json = true) {
@@ -26,7 +27,7 @@
     if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
     return data;
   }
-    function ensureToastHost() {
+  function ensureToastHost() {
     let host = document.getElementById("toast-host");
     if (!host) {
       host = document.createElement("div");
@@ -40,7 +41,7 @@
     const host = ensureToastHost();
     const el = document.createElement("div");
     el.className = "toast-item " + (type === "err" ? "err" : "ok");
-    const t = title || (type === "err" ? "??" : "??");
+    const t = title || (type === "err" ? (__S.save_fail_title || __S.err_title || "Error") : (__S.save_ok_title || __S.ok_title || "OK"));
     el.innerHTML = '<div class="toast-title"></div><div class="toast-msg"></div>';
     el.querySelector(".toast-title").textContent = t;
     el.querySelector(".toast-msg").textContent = String(msg || "");
@@ -66,7 +67,7 @@
     if (!el) return;
     if (job && job.running) {
       el.className = "badge run";
-      el.textContent = __S.running + " ? " + (job.kind || "job");
+      el.textContent = __S.running + " \u00b7 " + (job.kind || "job");
     } else if (job && job.exit_code != null && job.exit_code !== 0) {
       el.className = "badge fail";
       el.textContent = __S.ended + " code=" + job.exit_code;
@@ -289,10 +290,10 @@
     try {
       const config = JSON.parse(document.getElementById("config-editor").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config }) });
-      toast(__S.cfg_saved, "ok", "????");
+      toast(__S.cfg_saved, "ok", __S.save_ok_title);
       refreshStatus();
       refreshConfig();
-    } catch (err) { toast(__S.save_fail + ": " + (err.message || err), "err", "????"); }
+    } catch (err) { toast(__S.save_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
   });
 
   document.getElementById("btn-save-cpa")?.addEventListener("click", async () => {
@@ -310,20 +311,20 @@
       };
       if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });
-      toast("CPA " + __S.cfg_saved, "ok", "????");
+      toast(__S.cpa_saved, "ok", __S.save_ok_title);
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err), "err", "????"); }
+    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
   });
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {
     try {
       const patch = collectQuickConfig();
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
-      toast(__S.quick_saved, "ok", "????");
+      toast(__S.quick_saved, "ok", __S.save_ok_title);
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err), "err", "????"); }
+    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
   });
 
   document.getElementById("form-settings").addEventListener("submit", async (e) => {
@@ -338,10 +339,10 @@
       const res = await api("/api/settings", { method: "PUT", body: JSON.stringify(body) });
       if (body.web_token) setToken(body.web_token);
       document.getElementById("set-token").value = "";
-      toast(res.token_changed ? __S.set_saved_token : __S.set_saved, "ok", "????");
+      toast(res.token_changed ? __S.set_saved_token : __S.set_saved, "ok", __S.save_ok_title);
       await refreshSettings();
       applyNovncUrl(res.settings.novnc_url);
-    } catch (err) { toast(__S.set_fail + ": " + (err.message || err), "err", "????"); }
+    } catch (err) { toast(__S.set_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
   });
 
   document.getElementById("btn-logout").addEventListener("click", async () => {
@@ -363,7 +364,6 @@
     } catch (err) { toast(String(err.message || err)); }
   }
 
-  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败"};
   connectWs();
   bootstrap();
   setInterval(() => {
