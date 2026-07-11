@@ -145,7 +145,7 @@
     if (box && st.setup_hints) {
       if (st.setup_hints.length) {
         box.hidden = false;
-        box.innerHTML = "<strong>" + esc(__S.precheck) + "</strong> " + st.setup_hints.map(esc).join(" ? ");
+        box.innerHTML = "<strong>" + esc(__S.precheck) + "</strong> " + st.setup_hints.map(esc).join(" · ");
       } else box.hidden = true;
     }
     return st;
