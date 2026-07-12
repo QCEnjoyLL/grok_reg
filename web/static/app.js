@@ -208,6 +208,10 @@
     setBadge(st.job);
     if (st.novnc_url) applyNovncUrl(st.novnc_url);
     document.getElementById("link-accounts").href = withToken("/api/download/accounts");
+    const linkCpa = document.getElementById("link-cpa");
+    if (linkCpa) linkCpa.href = withToken("/api/download/cpa");
+    const linkCpa2 = document.getElementById("link-cpa-2");
+    if (linkCpa2) linkCpa2.href = withToken("/api/download/cpa");
     const box = document.getElementById("setup-hints");
     if (box && st.setup_hints) {
       if (st.setup_hints.length) {
@@ -234,8 +238,13 @@
       box.innerHTML = "<p class='hint'>" + esc(__S.no_cpa) + "</p>";
       return;
     }
-    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td></tr>`).join("");
-    box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const rows = data.items.map((r) => {
+      const file = r.file || ("xai-" + (r.email || "") + ".json");
+      const href = withToken("/api/download/cpa/" + encodeURIComponent(file));
+      return `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td>`
+        + `<td><a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a></td></tr>`;
+    }).join("");
+    box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   async function refreshConfig() {
     const data = await api("/api/config?redact=true");

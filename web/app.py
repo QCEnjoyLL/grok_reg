@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import json
 import os
 import re
@@ -10,13 +11,14 @@ import signal
 import subprocess
 import sys
 import threading
+import zipfile
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -1159,6 +1161,48 @@ def download_accounts(request: Request):
     if not path.is_file():
         raise HTTPException(404, "accounts file not found")
     return FileResponse(path, filename="accounts_cli.txt", media_type="text/plain")
+
+
+@app.get("/api/download/cpa")
+def download_cpa_zip(request: Request):
+    """Download all xai-*.json as a zip archive."""
+    require_auth(request)
+    d = resolve_cpa_dir()
+    files = sorted(d.glob("xai-*.json")) if d.is_dir() else []
+    if not files:
+        raise HTTPException(404, "no CPA files (xai-*.json) found")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            # only pack credential files, skip summary/failed logs
+            zf.write(f, arcname=f.name)
+    data = buf.getvalue()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"cpa_auths_{ts}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(data)),
+        },
+    )
+
+
+@app.get("/api/download/cpa/{filename}")
+def download_cpa_one(request: Request, filename: str):
+    """Download a single xai-*.json file."""
+    require_auth(request)
+    name = Path(filename).name
+    if not name.startswith("xai-") or not name.endswith(".json"):
+        raise HTTPException(400, "only xai-*.json allowed")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(400, "invalid filename")
+    path = resolve_cpa_dir() / name
+    if not path.is_file():
+        raise HTTPException(404, "CPA file not found")
+    return FileResponse(path, filename=name, media_type="application/json")
 
 
 def main(argv: list[str] | None = None) -> int:
