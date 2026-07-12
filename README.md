@@ -9,7 +9,7 @@
 | `accounts_cli.txt` | `email----password----sso` |
 | `cpa_auths/xai-*.json` | 免费 Grok 4.5 用 OIDC / CPA 认证 |
 
-> **SSO ? OIDC**。免费 Grok 4.5 必须再银 OIDC，不能只用 sso JWT。
+> **SSO ≠ CPA/OIDC**。`accounts_cli.txt` 里的 SSO 只是登录态 cookie；免费 Grok 4.5 还需要再生成 `cpa_auths/xai-*.json`（有 SSO 时程序会优先走纯 HTTP Device Flow，无需再过登录页验证）。
 
 ## 最快上手（Docker）
 
@@ -132,3 +132,13 @@ grok_reg/
   scripts/
   turnstilePatch/
 ```
+
+## CPA 生成（SSO 优先）
+
+账号格式：`email----password----sso`
+
+1. 点击后台「为缺失账号生成 CPA」或注册成功后自动 mint
+2. **有 SSO**：优先 `curl_cffi` 纯 HTTP Device Flow（不过登录页 Turnstile）
+3. **SSO 失效/没有**：回退浏览器登录（可能需 noVNC 手点 Cloudflare）
+4. 成功写入 `/data/cpa_auths/xai-<email>.json`
+

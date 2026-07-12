@@ -145,7 +145,7 @@
           <h2>CPA / Grok 4.5 配置</h2>
           <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
         </div>
-        <p class="hint">注册成功后自动生成 CPA/OIDC 认证文件（xai-邮箱.json），可选再上传到 CLIProxyAPI。Docker 内请保持 headless=false（有界面，方便过验证）。</p>
+        <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。</p>
         <form id="form-cpa" class="form">
           <div class="quick-grid">
             <label>是否生成 CPA 认证文件（Grok 4.5 用）
@@ -252,7 +252,7 @@
             <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
           </div>
         </div>
-        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。会用账号密码重新登录并导出 CPA（可能要过 Cloudflare，建议打开 noVNC）。请先在上方把「是否生成 CPA」设为 true 并保存。</p>
+        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。</p>
         <div id="accounts-table" class="table-wrap">加载中...</div>
       </div>
 

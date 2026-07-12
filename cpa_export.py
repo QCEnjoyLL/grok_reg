@@ -190,16 +190,19 @@ def export_cpa_xai_for_account(
     use_cookies = cookies
     if use_cookies is None and cookie_inject and page is not None:
         use_cookies = export_cookies_from_page(page)
+
+    # Extract SSO early (HTTP mint path needs it even if cookie inject is off)
+    sso_val = (sso or "").strip()
+    if not sso_val and isinstance(use_cookies, list):
+        for c in use_cookies:
+            if isinstance(c, dict) and c.get("name") in ("sso", "sso-rw") and c.get("value"):
+                sso_val = str(c.get("value"))
+                break
+
     if not cookie_inject:
         use_cookies = None
     else:
         # Always attach SSO cookie clones — register cookies alone often miss accounts.x.ai host
-        sso_val = (sso or "").strip()
-        if not sso_val and isinstance(use_cookies, list):
-            for c in use_cookies:
-                if isinstance(c, dict) and c.get("name") in ("sso", "sso-rw") and c.get("value"):
-                    sso_val = str(c.get("value"))
-                    break
         if sso_val:
             base = list(use_cookies) if isinstance(use_cookies, list) else []
             for name in ("sso", "sso-rw"):
@@ -215,15 +218,17 @@ def export_cpa_xai_for_account(
             use_cookies = base
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    prefer_sso = bool(cfg.get("cpa_prefer_sso_http", True))
     log(
         f"[cpa] mint OIDC for {email} -> {out_dir} proxy={proxy or '(none)'} "
         f"cookies={len(use_cookies) if isinstance(use_cookies, list) else (1 if use_cookies else 0)} "
-        f"reuse={reuse_browser}"
+        f"sso={'yes' if sso_val else 'no'} prefer_sso_http={prefer_sso} reuse={reuse_browser}"
     )
 
     def _log(msg: str) -> None:
         log(f"[cpa] {msg}")
 
+    sso_for_mint = sso_val or (sso or "")
     result = mint_and_export(
         email=email,
         password=password,
@@ -237,6 +242,8 @@ def export_cpa_xai_for_account(
         browser_timeout_sec=timeout,
         force_standalone=force_standalone,
         cookies=use_cookies,
+        sso=sso_for_mint,
+        prefer_sso_http=prefer_sso,
         reuse_browser=reuse_browser,
         recycle_every=recycle_every,
         log=_log,

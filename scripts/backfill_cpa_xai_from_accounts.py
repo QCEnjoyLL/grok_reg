@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Batch mint CPA xai-*.json from register accounts_cli.txt.
 
-Default: headed Chromium + turnstilePatch (headless is Cloudflare-blocked on
+Prefer SSO HTTP mint when accounts line has SSO (no browser/Turnstile).
+Fallback: headed Chromium + turnstilePatch (headless is Cloudflare-blocked on
 accounts.x.ai). Token poll is source of truth; consent Allow uses real click.
 
 Example (from grok_reg project root):
@@ -159,6 +160,8 @@ def main() -> int:
             probe_chat=args.probe_chat,
             browser_timeout_sec=args.timeout,
             force_standalone=args.force_standalone,
+            sso=getattr(acc, "sso", "") or "",
+            prefer_sso_http=True,
             log=log,
         )
         results.append(r)
