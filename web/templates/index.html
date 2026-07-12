@@ -145,10 +145,10 @@
           <h2>CPA / Grok 4.5 配置</h2>
           <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
         </div>
-        <p class="hint">注册成功后银造 OIDC，可选上传到 CLIProxyAPI。容器内建议 headless=false。</p>
+        <p class="hint">注册成功后自动生成 CPA/OIDC 认证文件（xai-邮箱.json），可选再上传到 CLIProxyAPI。Docker 内请保持 headless=false（有界面，方便过验证）。</p>
         <form id="form-cpa" class="form">
           <div class="quick-grid">
-            <label>是否导出 OIDC / CPA 认证
+            <label>是否生成 CPA 认证文件（Grok 4.5 用）
               <span class="field-key">cpa_export_enabled</span>
               <select id="q-cpa_export_enabled">
                 <option value="true" selected>true (开)</option>

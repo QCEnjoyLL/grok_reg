@@ -359,9 +359,17 @@ def _run_mint_job(worker_id: int | str, job: dict[str, Any], config: dict) -> di
     if not email or not password:
         _inc("mint_fail")
         return {"ok": False, "error": "missing email/password", "email": email}
-    if not config.get("cpa_export_enabled", True):
+    # bool/string-safe
+    enabled = config.get("cpa_export_enabled", True)
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in ("true", "1", "yes", "on", "开")
+    if not enabled:
         _inc("mint_skip")
-        log(worker_id, f"[cpa] export disabled, skip {email}")
+        log(
+            worker_id,
+            f"[cpa] export disabled (cpa_export_enabled={config.get('cpa_export_enabled')!r}), skip {email}. "
+            f"后台打开「是否生成 CPA 认证文件」并保存后重跑，或对已有账号用 Backfill。",
+        )
         return {"ok": False, "skipped": True, "email": email}
     try:
         import cpa_export
@@ -532,6 +540,9 @@ def main() -> int:
 
     reg.load_config()
     cfg0 = getattr(reg, "config", {}) or {}
+    # re-read after coerce
+    cfg0 = reg._coerce_config_types(dict(cfg0)) if hasattr(reg, "_coerce_config_types") else cfg0
+    reg.config = cfg0
     threads = max(1, min(args.threads, 10))
     fast = bool(args.fast) and not bool(args.no_fast)
 
@@ -542,6 +553,17 @@ def main() -> int:
         inline_mint=bool(args.inline_mint),
     )
     do_mint_inline = mint_workers == 0
+    _cpa_on = cfg0.get("cpa_export_enabled", True)
+    if isinstance(_cpa_on, str):
+        _cpa_on = _cpa_on.strip().lower() in ("true", "1", "yes", "on", "开")
+    log(
+        0,
+        f"[*] CPA 导出: {'开' if _cpa_on else '关'} | mint模式: "
+        f"{'inline' if do_mint_inline else f'workers={mint_workers}'} | auth_dir={cfg0.get('cpa_auth_dir', './cpa_auths')}",
+    )
+    if not _cpa_on:
+        log(0, "[!] cpa_export_enabled=false，注册成功也不会生成 xai-*.json。请在后台 CPA 配置打开并保存。")
+
     mint_qmax = resolve_mint_queue_max(
         cfg0,
         mint_workers,

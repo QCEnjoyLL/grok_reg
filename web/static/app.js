@@ -200,7 +200,7 @@
       box.innerHTML = "<p class='hint'>" + esc(__S.no_accounts) + "</p>";
       return;
     }
-    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? "?" : "-"}</td></tr>`).join("");
+    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? esc(r.sso_preview || "有") : "-"}</td></tr>`).join("");
     box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>${esc(__S.password)}</th><th>SSO</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   async function refreshCpa() {

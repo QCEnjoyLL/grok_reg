@@ -60,6 +60,20 @@ DEFAULT_CONFIG = {
     "moemail_api_base": "https://mail.nloln.cn",
     "moemail_api_key": "",
     "moemail_expiry_ms": 3600000,
+    # CPA / Grok 4.5 auth export (xai-*.json)
+    "cpa_export_enabled": True,
+    "cpa_headless": False,
+    "cpa_base_url": "https://cli-chat-proxy.grok.com/v1",
+    "cpa_proxy": "",
+    "cpa_auth_dir": "./cpa_auths",
+    "cpa_management_upload_enabled": False,
+    "cpa_management_base": "",
+    "cpa_management_key": "",
+    "cpa_mint_workers": -1,
+    "resin_sticky_enabled": True,
+    "resin_account_prefix": "grok",
+    "cf_ip_rotate_max": 5,
+    "cf_fail_rotate_after_sec": 15,
 }
 
 config = DEFAULT_CONFIG.copy()
@@ -255,6 +269,39 @@ class RegistrationCancelled(Exception):
     pass
 
 
+def _coerce_config_types(cfg: dict) -> dict:
+    """Normalize JSON/UI values (e.g. select "true"/"false" strings)."""
+    if not isinstance(cfg, dict):
+        return {}
+    out = dict(cfg)
+    bool_keys = {
+        "enable_nsfw",
+        "show_tutorial_on_start",
+        "grok2api_auto_add_local",
+        "grok2api_auto_add_remote",
+        "cpa_export_enabled",
+        "cpa_headless",
+        "cpa_management_upload_enabled",
+        "resin_sticky_enabled",
+    }
+    for k in bool_keys:
+        if k not in out:
+            continue
+        v = out[k]
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("true", "1", "yes", "on", "开"):
+                out[k] = True
+            elif s in ("false", "0", "no", "off", "关", ""):
+                out[k] = False
+        elif isinstance(v, (int, float)) and k in bool_keys:
+            out[k] = bool(v)
+    # paths
+    if "cpa_auth_dir" in out and out["cpa_auth_dir"] is None:
+        out["cpa_auth_dir"] = "./cpa_auths"
+    return out
+
+
 def load_config():
     load_env()
     global config
@@ -269,9 +316,11 @@ def load_config():
                     for k, v in loaded.items()
                     if not (isinstance(k, str) and (k.startswith("//") or k.startswith("#")))
                 }
-            config = {**DEFAULT_CONFIG, **loaded}
+            config = _coerce_config_types({**DEFAULT_CONFIG, **loaded})
         except Exception:
             config = DEFAULT_CONFIG.copy()
+    else:
+        config = DEFAULT_CONFIG.copy()
     return config
 
 

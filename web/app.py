@@ -45,6 +45,30 @@ _runtime_token = ENV_BOOT_TOKEN or "change-me"
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
+def _coerce_ui_bools(cfg: dict[str, Any]) -> dict[str, Any]:
+    bool_keys = {
+        "enable_nsfw",
+        "cpa_export_enabled",
+        "cpa_headless",
+        "cpa_management_upload_enabled",
+        "resin_sticky_enabled",
+        "grok2api_auto_add_local",
+        "grok2api_auto_add_remote",
+    }
+    out = dict(cfg)
+    for k in bool_keys:
+        if k not in out:
+            continue
+        v = out[k]
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("true", "1", "yes", "on", "开"):
+                out[k] = True
+            elif s in ("false", "0", "no", "off", "关", ""):
+                out[k] = False
+    return out
+
+
 
 def _load_ui_settings() -> dict[str, Any]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -833,7 +857,7 @@ def api_accounts(request: Request, limit: int = Query(100, ge=1, le=2000), offse
                 {
                     "email": email,
                     "password": password,
-                    "sso_preview": (sso[:24] + "?") if len(sso) > 24 else sso,
+                    "sso_preview": (sso[:20] + "...") if len(sso) > 20 else sso,
                     "has_sso": bool(sso),
                 }
             )
@@ -934,6 +958,7 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
     for k in ("_cmd", "__cmd", "_ui_cmd", "__job"):
         merged.pop(k, None)
 
+    merged = _coerce_ui_bools(merged)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     app_cfg = APP_HOME / "config.json"
