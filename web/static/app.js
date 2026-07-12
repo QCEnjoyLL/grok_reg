@@ -221,9 +221,53 @@
     }
     return st;
   }
+  const PAGE_SIZES = [5, 10, 20, 50, 100, 500];
+  const listState = {
+    accounts: { page: 1, pageSize: 10, total: 0, pages: 1 },
+    cpa: { page: 1, pageSize: 10, total: 0, pages: 1 },
+  };
+  function loadPageSize(key, fallback) {
+    try {
+      const v = parseInt(localStorage.getItem("grok_reg_" + key + "_page_size") || "", 10);
+      if (PAGE_SIZES.includes(v)) return v;
+    } catch (_) {}
+    return fallback;
+  }
+  function savePageSize(key, n) {
+    try { localStorage.setItem("grok_reg_" + key + "_page_size", String(n)); } catch (_) {}
+  }
+  listState.accounts.pageSize = loadPageSize("accounts", 10);
+  listState.cpa.pageSize = loadPageSize("cpa", 10);
+
+  function updatePagerUI(kind, meta) {
+    const st = listState[kind];
+    st.total = Number(meta.total || 0);
+    st.page = Number(meta.page || st.page || 1);
+    st.pages = Number(meta.pages || 1);
+    st.pageSize = Number(meta.limit || st.pageSize || 10);
+    const info = document.getElementById(kind + "-pager-info");
+    const prev = document.getElementById(kind + "-prev");
+    const next = document.getElementById(kind + "-next");
+    const sel = document.getElementById(kind + "-page-size");
+    if (sel && String(sel.value) !== String(st.pageSize)) sel.value = String(st.pageSize);
+    const start = st.total ? ((st.page - 1) * st.pageSize + 1) : 0;
+    const end = Math.min(st.page * st.pageSize, st.total);
+    if (info) {
+      info.textContent = st.total
+        ? ("共 " + st.total + " 条 · 第 " + st.page + "/" + st.pages + " 页 · 显示 " + start + "-" + end)
+        : "共 0 条";
+    }
+    if (prev) prev.disabled = st.page <= 1 || st.total === 0;
+    if (next) next.disabled = st.page >= st.pages || st.total === 0;
+  }
+
   async function refreshAccounts() {
-    const data = await api("/api/accounts?limit=50");
+    const st = listState.accounts;
+    const limit = st.pageSize;
+    const offset = (st.page - 1) * limit;
+    const data = await api("/api/accounts?limit=" + limit + "&offset=" + offset);
     const box = document.getElementById("accounts-table");
+    updatePagerUI("accounts", data);
     if (!data.items || !data.items.length) {
       box.innerHTML = "<p class='hint'>" + esc(__S.no_accounts) + "</p>";
       return;
@@ -236,8 +280,12 @@
     </table>`;
   }
   async function refreshCpa() {
-    const data = await api("/api/cpa?limit=50");
+    const st = listState.cpa;
+    const limit = st.pageSize;
+    const offset = (st.page - 1) * limit;
+    const data = await api("/api/cpa?limit=" + limit + "&offset=" + offset);
     const box = document.getElementById("cpa-table");
+    updatePagerUI("cpa", data);
     if (!data.items || !data.items.length) {
       box.innerHTML = "<p class='hint'>" + esc(__S.no_cpa) + "</p>";
       return;
@@ -681,8 +729,8 @@
       // pick first account email from table if possible
       let email = "";
       try {
-        const data = await api("/api/accounts?limit=50");
-        const cpa = await api("/api/cpa?limit=200");
+        const data = await api("/api/accounts?limit=500&offset=0");
+        const cpa = await api("/api/cpa?limit=500&offset=0");
         const have = new Set((cpa.items || []).map((x) => String(x.email || "").toLowerCase()));
         const miss = (data.items || []).find((a) => a.email && !have.has(String(a.email).toLowerCase()));
         email = miss ? miss.email : ((data.items || [])[0] || {}).email || "";
@@ -702,6 +750,36 @@
   document.getElementById("btn-refresh-cpa")?.addEventListener("click", () => {
     refreshCpa().catch((e) => toast(String(e.message || e)));
   });
+
+  function bindPager(kind, refreshFn) {
+    const prev = document.getElementById(kind + "-prev");
+    const next = document.getElementById(kind + "-next");
+    const sel = document.getElementById(kind + "-page-size");
+    if (sel) {
+      sel.value = String(listState[kind].pageSize);
+      sel.addEventListener("change", () => {
+        const n = parseInt(sel.value, 10);
+        listState[kind].pageSize = PAGE_SIZES.includes(n) ? n : 10;
+        listState[kind].page = 1;
+        savePageSize(kind, listState[kind].pageSize);
+        refreshFn().catch((e) => toast(String(e.message || e)));
+      });
+    }
+    if (prev) prev.addEventListener("click", () => {
+      if (listState[kind].page > 1) {
+        listState[kind].page -= 1;
+        refreshFn().catch((e) => toast(String(e.message || e)));
+      }
+    });
+    if (next) next.addEventListener("click", () => {
+      if (listState[kind].page < listState[kind].pages) {
+        listState[kind].page += 1;
+        refreshFn().catch((e) => toast(String(e.message || e)));
+      }
+    });
+  }
+  bindPager("accounts", refreshAccounts);
+  bindPager("cpa", refreshCpa);
 
   document.getElementById("btn-stop").addEventListener("click", async () => {
     try {

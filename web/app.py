@@ -842,7 +842,11 @@ async def ws_logs(ws: WebSocket, token: str = ""):
 
 
 @app.get("/api/accounts")
-def api_accounts(request: Request, limit: int = Query(100, ge=1, le=2000), offset: int = 0):
+def api_accounts(
+    request: Request,
+    limit: int = Query(20, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+):
     require_auth(request)
     path = resolve_accounts_path()
     rows = []
@@ -863,27 +867,52 @@ def api_accounts(request: Request, limit: int = Query(100, ge=1, le=2000), offse
                     "has_sso": bool(sso),
                 }
             )
-    return {"total": total, "items": rows}
+    page = (offset // limit) + 1 if limit else 1
+    pages = max(1, (total + limit - 1) // limit) if limit else 1
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "page": page,
+        "pages": pages,
+        "items": rows,
+    }
 
 
 @app.get("/api/cpa")
-def api_cpa(request: Request, limit: int = Query(100, ge=1, le=2000)):
+def api_cpa(
+    request: Request,
+    limit: int = Query(20, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+):
     require_auth(request)
     d = resolve_cpa_dir()
-    items = []
+    files = []
     if d.is_dir():
-        files = sorted(d.glob("xai-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
-        for f in files:
-            email = f.name[len("xai-") : -len(".json")] if f.name.startswith("xai-") else f.stem
-            items.append(
-                {
-                    "file": f.name,
-                    "email": email,
-                    "size": f.stat().st_size,
-                    "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
-                }
-            )
-    return {"dir": str(d), "items": items}
+        files = sorted(d.glob("xai-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    total = len(files)
+    items = []
+    for f in files[offset : offset + limit]:
+        email = f.name[len("xai-") : -len(".json")] if f.name.startswith("xai-") else f.stem
+        items.append(
+            {
+                "file": f.name,
+                "email": email,
+                "size": f.stat().st_size,
+                "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
+            }
+        )
+    page = (offset // limit) + 1 if limit else 1
+    pages = max(1, (total + limit - 1) // limit) if limit else 1
+    return {
+        "dir": str(d),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "page": page,
+        "pages": pages,
+        "items": items,
+    }
 
 
 @app.get("/api/config")

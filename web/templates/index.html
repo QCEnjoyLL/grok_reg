@@ -37,12 +37,12 @@
           <div><label>邮箱源</label><strong id="st-mail">-</strong></div>
           <div><label>DISPLAY</label><strong id="st-display">-</strong></div>
         </div>
-        <div class="links">
+        <p class="hint">noVNC 公网地址在「系统设置」配置，例如 <code>http://IP:6089/vnc.html?autoconnect=1&amp;resize=scale</code></p>
+        <div class="links card-actions">
           <a id="link-novnc" class="btn primary" target="_blank" rel="noopener">打开 noVNC 看浏览器</a>
           <a class="btn ghost" href="/api/download/accounts" id="link-accounts">下载 accounts</a>
           <a class="btn ghost" href="/api/download/cpa" id="link-cpa">下载 CPA zip</a>
         </div>
-        <p class="hint">noVNC 公网地址在「系统设置」配置，例如 <code>http://IP:6089/vnc.html?autoconnect=1&amp;resize=scale</code></p>
       </div>
 
       <div class="card">
@@ -62,7 +62,9 @@
             </div>
           </label>
           <p class="hint">解析结果：<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
-          <button type="submit" class="btn primary">保存设置</button>
+          <div class="row card-actions">
+            <button type="submit" class="btn primary">保存设置</button>
+          </div>
         </form>
       </div>
 
@@ -182,11 +184,11 @@
                 <option value="true">true (开)</option>
               </select>
             </label>
-            <label class="field-full">CPA 管理地址
+            <label>CPA 管理地址
               <span class="field-key">cpa_management_base</span>
               <input type="text" id="q-cpa_management_base" placeholder="http://192.168.x.x:8317" />
             </label>
-            <label class="field-full">CPA 管理密码
+            <label>CPA 管理密码
               <span class="field-key">cpa_management_key</span>
               <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
@@ -207,7 +209,7 @@
             <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
           </label>
           <label class="check"><input type="checkbox" name="fast" checked /> 快速模式</label>
-          <div class="row">
+          <div class="row card-actions">
             <button type="submit" class="btn primary">开始注册</button>
             <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
             <button type="button" id="btn-stop" class="btn danger">停止</button>
@@ -230,7 +232,7 @@
           </label>
           <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
           <label class="check"><input type="checkbox" name="headless" /> headless (不推荐)</label>
-          <div class="row">
+          <div class="row card-actions">
             <button type="submit" class="btn primary">开始 Backfill</button>
           </div>
         </form>
@@ -254,6 +256,25 @@
         </div>
         <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。</p>
         <div id="accounts-table" class="table-wrap">加载中...</div>
+        <div class="pager" id="accounts-pager" data-kind="accounts">
+          <div class="pager-left">
+            <span class="pager-info" id="accounts-pager-info">-</span>
+          </div>
+          <div class="pager-right">
+            <label class="pager-size">每页
+              <select id="accounts-page-size">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost sm" id="accounts-prev" disabled>上一页</button>
+            <button type="button" class="btn ghost sm" id="accounts-next" disabled>下一页</button>
+          </div>
+        </div>
       </div>
 
       <div class="card wide">
@@ -265,6 +286,25 @@
           </div>
         </div>
         <div id="cpa-table" class="table-wrap">加载中...</div>
+        <div class="pager" id="cpa-pager" data-kind="cpa">
+          <div class="pager-left">
+            <span class="pager-info" id="cpa-pager-info">-</span>
+          </div>
+          <div class="pager-right">
+            <label class="pager-size">每页
+              <select id="cpa-page-size">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost sm" id="cpa-prev" disabled>上一页</button>
+            <button type="button" class="btn ghost sm" id="cpa-next" disabled>下一页</button>
+          </div>
+        </div>
       </div>
 
       <div class="card wide">

@@ -158,7 +158,7 @@ h1 { margin: 0; font-size: 1.25rem; }
 }
 .table-wrap {
   width: 100%;
-  max-height: 280px;
+  max-height: min(52vh, 420px);
   min-height: 120px;
   overflow: auto;
   font-size: 0.86rem;
@@ -353,4 +353,86 @@ label .field-key + select {
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* table pager */
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.pager-left, .pager-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pager-info {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.pager-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.pager-size select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0c1428;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: #3a4f7a transparent;
+}
+.table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+.table-wrap::-webkit-scrollbar-thumb {
+  background: #3a4f7a;
+  border-radius: 8px;
+}
+
+
+/* Pin primary action bars to bottom of equal-height cards */
+.grid > .card:not(.wide) {
+  justify-content: flex-start;
+}
+.grid > .card:not(.wide) > .form {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.grid > .card:not(.wide) > .form > label,
+.grid > .card:not(.wide) > .form > .hint,
+.grid > .card:not(.wide) > .form > .check {
+  flex: 0 0 auto;
+}
+.grid > .card:not(.wide) > .form > .card-actions,
+.grid > .card:not(.wide) > .links.card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+  width: 100%;
+}
+.grid > .card:not(.wide) > .form > .card-actions .btn.primary {
+  min-width: 120px;
+}
+/* overview: stats stay top, actions bottom */
+.grid > .card:not(.wide) > .stats {
+  flex: 0 0 auto;
+}
+.grid > .card:not(.wide) > .hint {
+  flex: 0 0 auto;
 }
