@@ -361,12 +361,36 @@ def _build_resin_sticky_proxy(proxy_url, account):
 
 
 def begin_registration_proxy_session(label=""):
+    """Bind this thread to a proxy session.
+
+    When resin_sticky_enabled=true and proxy has username, username becomes
+    Platform.Account (e.g. Default.grok_w1_n1_ab12cd34) so the pool can pin
+    or rotate exit IPs per Account.
+    """
     base_proxy = str(config.get("proxy", "") or "").strip()
     old_proxy = getattr(_registration_proxy_tls, "proxy", "")
     if old_proxy and old_proxy != base_proxy:
-        _stop_authenticated_proxy_bridge(old_proxy)
+        try:
+            _stop_authenticated_proxy_bridge(old_proxy)
+        except Exception:
+            pass
 
-    if not base_proxy or not config.get("resin_sticky_enabled", False):
+    if not base_proxy:
+        _registration_proxy_tls.proxy = ""
+        _registration_proxy_tls.account = ""
+        return ""
+
+    sticky = bool(config.get("resin_sticky_enabled", True))
+    if not sticky:
+        _registration_proxy_tls.proxy = base_proxy
+        _registration_proxy_tls.account = ""
+        return ""
+
+    # need username for resin sticky identity
+    from urllib.parse import urlparse
+
+    parsed = urlparse(base_proxy if "://" in base_proxy else f"http://{base_proxy}")
+    if parsed.username is None:
         _registration_proxy_tls.proxy = base_proxy
         _registration_proxy_tls.account = ""
         return ""
@@ -376,9 +400,80 @@ def begin_registration_proxy_session(label=""):
     random_part = secrets.token_hex(4)
     account = "_".join(part for part in (prefix, suffix, random_part) if part)
     runtime_proxy = _build_resin_sticky_proxy(base_proxy, account)
+    # drop old bridge for previous sticky user
+    if old_proxy and old_proxy != runtime_proxy:
+        try:
+            _stop_authenticated_proxy_bridge(old_proxy)
+        except Exception:
+            pass
     _registration_proxy_tls.proxy = runtime_proxy
     _registration_proxy_tls.account = account
     return account
+
+
+def rotate_registration_proxy_session(label="", log_callback=None, restart=True):
+    """Force a new Resin Account (new exit IP when pool maps Account->IP).
+
+    Returns new account id (or empty string if sticky disabled).
+    """
+    old_account = getattr(_registration_proxy_tls, "account", "") or ""
+    # always new random suffix
+    tag = label or f"rot_{secrets.token_hex(3)}"
+    account = begin_registration_proxy_session(tag)
+    if log_callback:
+        if account:
+            log_callback(f"[*] 已轮换代理出口会话: {old_account or '-'} -> {account}")
+        else:
+            log_callback("[*] 代理粘性未启用或 proxy 无用户名，无法按 Account 换 IP（请 resin_sticky_enabled=true 且 proxy 形如 http://Platform:pass@ip:port）")
+    if restart:
+        try:
+            # full recycle so Chromium picks new --proxy-server bridge
+            try:
+                TabPool.release_tab()
+            except Exception:
+                pass
+            try:
+                TabPool.shutdown()
+            except Exception:
+                pass
+            start_browser(log_callback=log_callback)
+        except Exception as exc:
+            if log_callback:
+                log_callback(f"[Debug] 换 IP 后重启浏览器失败: {exc}")
+    return account
+
+
+def page_has_turnstile_failure(page=None):
+    """Detect Cloudflare Verification failed on current page."""
+    page = page or _get_page()
+    if page is None:
+        return False
+    try:
+        return bool(
+            page.run_js(
+                r"""
+const body = (document.body && (document.body.innerText || document.body.textContent) || '').toLowerCase();
+const html = (document.documentElement && document.documentElement.innerHTML || '').toLowerCase();
+const blob = body + ' ' + html;
+if (blob.includes('verification failed')) return true;
+if (blob.includes('验证失败')) return true;
+if (blob.includes('unable to verify')) return true;
+// red error widget near turnstile
+const nodes = Array.from(document.querySelectorAll('div,span,p,strong'));
+for (const n of nodes) {
+  const t = (n.innerText || n.textContent || '').trim().toLowerCase();
+  if (!t) continue;
+  if (t.includes('verification failed') || t === 'failed') {
+    const near = (n.className || '') + ' ' + (n.parentElement && n.parentElement.className || '');
+    if (near.toLowerCase().includes('error') || near.toLowerCase().includes('fail') || t.includes('verification')) return true;
+  }
+}
+return false;
+"""
+            )
+        )
+    except Exception:
+        return False
 
 
 def get_duckmail_api_key():
@@ -3010,7 +3105,7 @@ const buttons = Array.from(document.querySelectorAll('button[type="submit"], but
 });
 const submitBtn = buttons.find((node) => {
     const t = (node.innerText || node.textContent || '').replace(/\\s+/g, '').toLowerCase();
-    return t.includes('完成注册') || t.includes('创建账户') || t.includes('sign up') || t.includes('createaccount');
+    return t.includes('完成注册') || t.includes('创建账户') || t.includes('completesignup') || t.includes('signup') || t.includes('createaccount') || t.includes('complete');
 });
 
 // 必须等待 Cloudflare 校验通过后再提交
@@ -3041,6 +3136,16 @@ return 'filled-no-submit';
                 now = time.time()
                 if wait_cf_since is None:
                     wait_cf_since = now
+                # hard fail widget -> ask upper layer to rotate exit IP
+                if page_has_turnstile_failure(page):
+                    waited = int(now - wait_cf_since)
+                    min_wait = float(config.get("cf_fail_rotate_after_sec", 15) or 15)
+                    if waited >= min_wait:
+                        raise Exception(
+                            "CF_NEED_ROTATE: Cloudflare Verification failed，需要换代理出口 IP 重试"
+                        )
+                    elif log_callback:
+                        log_callback(f"[!] Cloudflare 显示 Verification failed，{int(min_wait-waited)}s 后将换 IP 重试...")
                 # 卡住后自动二次复用 Turnstile 组件
                 if now - wait_cf_since >= 12 and now - last_cf_retry_at >= 8:
                     if log_callback:
@@ -3105,7 +3210,7 @@ const buttons = Array.from(document.querySelectorAll('button[type="submit"], but
 });
 const submitBtn = buttons.find((node) => {
     const t = (node.innerText || node.textContent || '').replace(/\s+/g, '').toLowerCase();
-    return t.includes('完成注册') || t.includes('创建账户') || t.includes('sign up') || t.includes('createaccount');
+    return t.includes('完成注册') || t.includes('创建账户') || t.includes('completesignup') || t.includes('signup') || t.includes('createaccount') || t.includes('complete');
 });
 if (!submitBtn) return 'no-submit-button';
 submitBtn.focus();
@@ -3121,6 +3226,15 @@ return 'submitted';
             now = time.time()
             if wait_cf_since is None:
                 wait_cf_since = now
+            if page_has_turnstile_failure(page):
+                waited = int(now - wait_cf_since)
+                min_wait = float(config.get("cf_fail_rotate_after_sec", 15) or 15)
+                if waited >= min_wait:
+                    raise Exception(
+                        "CF_NEED_ROTATE: Cloudflare Verification failed，需要换代理出口 IP 重试"
+                    )
+                elif log_callback:
+                    log_callback(f"[!] Cloudflare Verification failed，{int(min_wait-waited)}s 后换 IP...")
             if now - wait_cf_since >= 12 and now - last_cf_retry_at >= 8:
                 if log_callback:
                     log_callback("[*] 提交前仍卡住，自动再次复用 Turnstile...")
@@ -3160,6 +3274,8 @@ return String(cfInput.value || '').trim().length;
 
         human_sleep(0.5, cancel_callback)
 
+    if page_has_turnstile_failure(page):
+        raise Exception("CF_NEED_ROTATE: 资料页超时且 Cloudflare Verification failed")
     raise Exception("最终注册页资料填写失败")
 
 
@@ -3335,7 +3451,7 @@ const buttons = Array.from(document.querySelectorAll('button[type="submit"], but
 });
 const submitBtn = buttons.find((node) => {
     const t = (node.innerText || node.textContent || '').replace(/\s+/g, '').toLowerCase();
-    return t.includes('完成注册') || t.includes('创建账户') || t.includes('sign up') || t.includes('createaccount');
+    return t.includes('完成注册') || t.includes('创建账户') || t.includes('completesignup') || t.includes('signup') || t.includes('createaccount') || t.includes('complete');
 });
 if (!submitBtn) return 'final-page-no-submit';
 submitBtn.focus();

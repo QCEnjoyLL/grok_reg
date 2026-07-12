@@ -254,9 +254,23 @@ def register_one(
 
     try:
         log(worker_id, "4. 填写资料")
-        profile = reg.fill_profile_and_submit(
-            log_callback=lambda m: log(worker_id, m), cancel_callback=cancel
-        )
+        try:
+            profile = reg.fill_profile_and_submit(
+                log_callback=lambda m: log(worker_id, m), cancel_callback=cancel
+            )
+        except Exception as profile_exc:
+            pmsg = str(profile_exc)
+            if "CF_NEED_ROTATE" in pmsg or "Verification failed" in pmsg:
+                log(worker_id, f"! Cloudflare 人机失败，准备换代理出口: {pmsg}")
+                try:
+                    reg.rotate_registration_proxy_session(
+                        label=f"w{worker_id}_n{idx}_cf",
+                        log_callback=lambda m: log(worker_id, m),
+                        restart=True,
+                    )
+                except Exception as rot_exc:
+                    log(worker_id, f"[Debug] 换出口失败: {rot_exc}")
+            raise
         log(worker_id, f"资料已填: {profile.get('given_name')} {profile.get('family_name')}")
         log(worker_id, "5. 等待 sso cookie")
         sso = reg.wait_for_sso_cookie(
@@ -401,8 +415,11 @@ def _register_worker(
                 task_queue.put(i)
             continue
 
+        # more attempts when CF needs new exit IP from resin pool
+        max_retry = int(reg.config.get("cf_ip_rotate_max", 5) or 5)
+        max_retry = max(2, min(max_retry, 12))
         retry = 0
-        while retry < 2:
+        while retry < max_retry:
             try:
                 result = register_one(
                     worker_id,
@@ -415,21 +432,40 @@ def _register_worker(
                 if result:
                     break
                 retry += 1
-                if retry < 2:
-                    log(worker_id, f"[retry] 账号 {idx} 失败，重试 {retry}/1")
+                if retry < max_retry:
+                    log(worker_id, f"[retry] 账号 {idx} 失败，换出口重试 {retry}/{max_retry-1}")
                     try:
-                        reg.restart_browser(log_callback=lambda m: log(worker_id, m))
+                        reg.rotate_registration_proxy_session(
+                            label=f"w{worker_id}_n{idx}_r{retry}",
+                            log_callback=lambda m: log(worker_id, m),
+                            restart=True,
+                        )
                     except Exception:
-                        pass
-            except Exception:
+                        try:
+                            reg.restart_browser(log_callback=lambda m: log(worker_id, m))
+                        except Exception:
+                            pass
+            except Exception as exc:
                 retry += 1
-                if retry < 2:
-                    log(worker_id, f"[retry] 账号 {idx} 异常，重试 {retry}/1")
+                msg = str(exc)
+                need_rot = "CF_NEED_ROTATE" in msg or "Verification failed" in msg or "Turnstile" in msg
+                if retry < max_retry:
+                    log(
+                        worker_id,
+                        f"[retry] 账号 {idx} 异常，{'换IP' if need_rot else '重试'} {retry}/{max_retry-1}: {msg[:160]}",
+                    )
                     traceback.print_exc()
                     try:
-                        reg.restart_browser(log_callback=lambda m: log(worker_id, m))
+                        reg.rotate_registration_proxy_session(
+                            label=f"w{worker_id}_n{idx}_r{retry}",
+                            log_callback=lambda m: log(worker_id, m),
+                            restart=True,
+                        )
                     except Exception:
-                        pass
+                        try:
+                            reg.restart_browser(log_callback=lambda m: log(worker_id, m))
+                        except Exception:
+                            pass
 
         if retry >= 2:
             # register_one already counted fail on exception path; if both returned None, count once more only if needed
