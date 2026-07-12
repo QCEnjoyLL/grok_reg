@@ -44,11 +44,23 @@ h1 { margin: 0; font-size: 1.25rem; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch; /* left/right cards same height in a row */
 }
 .grid > .card {
   width: 100%;
   min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.grid > .card > .form {
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+}
+.grid > .card > .form > .row:last-child,
+.grid > .card > .row:last-child {
+  margin-top: auto;
 }
 .card {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
@@ -82,6 +94,14 @@ h1 { margin: 0; font-size: 1.25rem; }
 .stats label { display: block; color: var(--muted); font-size: 0.75rem; margin-bottom: 4px; }
 .stats strong { font-size: 1.05rem; word-break: break-all; }
 .links { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+/* Equal-height side cards: pin last action row to bottom */
+.grid > .card:not(.wide) > .form {
+  flex: 1 1 auto;
+}
+.grid > .card:not(.wide) > .hint:last-child {
+  margin-top: auto;
+}
+
 .hint { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 8px 0 0; }
 .hint code, code { font-family: var(--mono); color: #b7d0ff; }
 .form { display: grid; gap: 12px; }
