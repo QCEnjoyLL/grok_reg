@@ -216,7 +216,7 @@
 
       <div class="card">
         <details class="advanced fold-card" id="backfill-box">
-          <summary class="summary-left">补认证 Backfill（高级，默认折叠）</summary>
+          <summary class="summary-left">补认证 Backfill（高级选项，一般用上面的「生成 CPA」按钮即可）</summary>
           <form id="form-backfill" class="form">
             <label>limit (0=全部缺失)
               <input type="number" name="limit" value="1" min="0" max="5000" />
@@ -244,13 +244,23 @@
         <pre id="log" class="log"></pre>
       </div>
 
-      <div class="card">
-        <h2>最近账号</h2>
+      <div class="card wide">
+        <div class="card-head">
+          <h2>最近账号 / 补生成 CPA</h2>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
+            <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
+          </div>
+        </div>
+        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。会用账号密码重新登录并导出 CPA（可能要过 Cloudflare，建议打开 noVNC）。请先在上方把「是否生成 CPA」设为 true 并保存。</p>
         <div id="accounts-table" class="table-wrap">加载中...</div>
       </div>
 
       <div class="card">
-        <h2>CPA 文件</h2>
+        <div class="card-head">
+          <h2>CPA 文件</h2>
+          <button type="button" id="btn-refresh-cpa" class="btn ghost sm">刷新</button>
+        </div>
         <div id="cpa-table" class="table-wrap">加载中...</div>
       </div>
 

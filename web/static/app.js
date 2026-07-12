@@ -1,5 +1,5 @@
 (() => {
-  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "成功", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
+  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "gen_cpa_started": "已开始为缺失账号生成 CPA", "gen_cpa_one": "已开始生成 CPA（1个）", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "成功", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
   function getToken() { return localStorage.getItem("web_token") || ""; }
   function setToken(t) { localStorage.setItem("web_token", t || ""); }
   function authHeaders(json = true) {
@@ -525,26 +525,137 @@
     }
   });
 
+  async function startBackfill(opts = {}) {
+    const body = {
+      action: "backfill",
+      limit: Number(opts.limit ?? 0),
+      email: String(opts.email || ""),
+      timeout: Number(opts.timeout || 300),
+      probe: opts.probe !== false,
+      headless: !!opts.headless,
+      sleep: Number(opts.sleep || 3),
+    };
+    // Prefer channels that work in this deployment
+    try {
+      return await api("/api/config", {
+        method: "PUT",
+        timeoutMs: 12000,
+        body: JSON.stringify({ config: { _cmd: body } }),
+      });
+    } catch (e1) {
+      try {
+        return await api("/api/task", {
+          method: "PUT",
+          timeoutMs: 12000,
+          body: JSON.stringify(body),
+        });
+      } catch (e2) {
+        try {
+          return await api("/api/go?" + new URLSearchParams({
+            action: "backfill",
+            limit: String(body.limit),
+            email: body.email,
+            timeout: String(body.timeout),
+            probe: body.probe ? "1" : "0",
+            headless: body.headless ? "1" : "0",
+          }), { timeoutMs: 12000 });
+        } catch (e3) {
+          return await api("/api/jobs/backfill", {
+            method: "POST",
+            timeoutMs: 12000,
+            body: JSON.stringify(body),
+          });
+        }
+      }
+    }
+  }
+
+  async function ensureCpaExportEnabled() {
+    try {
+      const data = await api("/api/config?redact=true");
+      const cfg = data.config || {};
+      let on = cfg.cpa_export_enabled;
+      if (typeof on === "string") on = ["true", "1", "yes", "on"].includes(on.toLowerCase());
+      if (on === false || on === 0) {
+        await api("/api/config", {
+          method: "PUT",
+          body: JSON.stringify({ config: { cpa_export_enabled: true, cpa_headless: false } }),
+        });
+        toast("[ui] 已自动打开 cpa_export_enabled=true");
+        await refreshConfig();
+      }
+    } catch (err) {
+      toast("[ui] 检查 CPA 开关失败: " + (err.message || err), "err");
+    }
+  }
+
   document.getElementById("form-backfill").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const body = {
-      limit: Number(fd.get("limit") || 1),
+      limit: Number(fd.get("limit") || 0),
       email: String(fd.get("email") || ""),
       timeout: Number(fd.get("timeout") || 300),
       probe: fd.get("probe") === "on",
       headless: fd.get("headless") === "on",
     };
     try {
-      try {
-        await api("/api/task", { method: "PUT", body: JSON.stringify({ action: "backfill", ...body }) });
-      } catch (_) {
-        try { await wsSend("backfill", body); }
-        catch (__) { await api("/api/jobs/backfill", { method: "POST", body: JSON.stringify(body) }); }
-      }
-      toast(__S.bf_started);
+      await ensureCpaExportEnabled();
+      toast("[ui] starting backfill ...");
+      const res = await startBackfill(body);
+      toast(__S.bf_started + " pid=" + ((res.job && res.job.pid) || (res.job_result && res.job_result.job && res.job_result.job.pid) || "?"));
       refreshStatus();
-    } catch (err) { toast(String(err.message || err)); }
+      refreshCpa();
+    } catch (err) { toast(String(err.message || err), "err"); }
+  });
+
+  document.getElementById("btn-gen-cpa-missing")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-gen-cpa-missing");
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "生成中..."; }
+    try {
+      await ensureCpaExportEnabled();
+      // limit=0 means all accounts missing xai-*.json
+      toast("[ui] 为所有缺失 CPA 的账号开始生成 ...");
+      const res = await startBackfill({ limit: 0, email: "", timeout: 300, probe: true, headless: false });
+      toast((__S.gen_cpa_started || "已开始生成 CPA") + " pid=" + ((res.job && res.job.pid) || (res.job_result && res.job_result.job && res.job_result.job.pid) || "?"));
+      await refreshStatus();
+      setTimeout(() => { refreshCpa().catch(() => {}); refreshAccounts().catch(() => {}); }, 3000);
+    } catch (err) {
+      toast("生成 CPA 失败: " + (err.message || err), "err");
+      alert("生成 CPA 失败: " + (err.message || err));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "为缺失账号生成 CPA"; }
+    }
+  });
+
+  document.getElementById("btn-gen-cpa-one")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-gen-cpa-one");
+    if (btn) { btn.disabled = true; }
+    try {
+      await ensureCpaExportEnabled();
+      // pick first account email from table if possible
+      let email = "";
+      try {
+        const data = await api("/api/accounts?limit=50");
+        const cpa = await api("/api/cpa?limit=200");
+        const have = new Set((cpa.items || []).map((x) => String(x.email || "").toLowerCase()));
+        const miss = (data.items || []).find((a) => a.email && !have.has(String(a.email).toLowerCase()));
+        email = miss ? miss.email : ((data.items || [])[0] || {}).email || "";
+      } catch (_) {}
+      toast("[ui] 生成 CPA: " + (email || "(limit=1)"));
+      const res = await startBackfill({ limit: 1, email, timeout: 300, probe: true, headless: false });
+      toast((__S.gen_cpa_one || "已开始生成 CPA") + " " + (email || "") + " pid=" + ((res.job && res.job.pid) || "?"));
+      await refreshStatus();
+      setTimeout(() => { refreshCpa().catch(() => {}); }, 3000);
+    } catch (err) {
+      toast("生成 CPA 失败: " + (err.message || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  document.getElementById("btn-refresh-cpa")?.addEventListener("click", () => {
+    refreshCpa().catch((e) => toast(String(e.message || e)));
   });
 
   document.getElementById("btn-stop").addEventListener("click", async () => {
