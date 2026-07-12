@@ -2427,9 +2427,11 @@ def open_signup_page(log_callback=None, cancel_callback=None):
             + detail
             + f" | proxy={proxy}"
         )
+    dismiss_cookie_banner(page, log_callback)
     click_email_signup_button(
         timeout=25, log_callback=log_callback, cancel_callback=cancel_callback
     )
+    dismiss_cookie_banner(_get_page(), log_callback)
     dump_state(page, "after-email-signup-click")
 
 
@@ -2450,105 +2452,240 @@ return !!(givenInput && familyInput && passwordInput);
         return False
 
 
-def fill_email_and_submit(timeout=15, log_callback=None, cancel_callback=None):
+def dismiss_cookie_banner(page=None, log_callback=None):
+    """Close xAI cookie consent modal if present."""
+    page = page or _get_page()
+    if page is None:
+        return False
+    try:
+        res = page.run_js(
+            r"""
+function isVisible(node) {
+  if (!node) return false;
+  const style = window.getComputedStyle(node);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const rect = node.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+const texts = [
+  'accept all cookies',
+  'accept all',
+  'accept cookies',
+  'reject all',
+  'allow all',
+  'i agree',
+  '同意全部',
+  '接受全部',
+  '接受所有',
+  '全部接受',
+];
+const nodes = Array.from(document.querySelectorAll('button, [role="button"], a'));
+// prefer Accept All Cookies
+let target = nodes.find((n) => {
+  if (!isVisible(n) || n.disabled) return false;
+  const s = (n.innerText || n.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return s === 'accept all cookies' || s.includes('accept all cookie');
+});
+if (!target) {
+  target = nodes.find((n) => {
+    if (!isVisible(n) || n.disabled) return false;
+    const s = (n.innerText || n.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return texts.some((t) => s === t || s.includes(t));
+  });
+}
+if (!target) {
+  // close (x) on dialog
+  const closeBtn = Array.from(document.querySelectorAll('button, [aria-label]')).find((n) => {
+    if (!isVisible(n)) return false;
+    const label = ((n.getAttribute('aria-label') || '') + ' ' + (n.innerText || '')).toLowerCase();
+    return label.includes('close') || label === '×' || label === 'x';
+  });
+  if (closeBtn) { closeBtn.click(); return 'close'; }
+  return false;
+}
+target.click();
+return (target.innerText || target.textContent || 'clicked').toString().trim().slice(0, 40);
+"""
+        )
+        if res and log_callback:
+            log_callback(f"[*] 已处理 Cookie 弹窗: {res}")
+        return bool(res)
+    except Exception as exc:
+        if log_callback:
+            log_callback(f"[Debug] cookie dismiss failed: {exc}")
+        return False
+
+
+def fill_email_and_submit(timeout=25, log_callback=None, cancel_callback=None):
     page = _get_page()
     raise_if_cancelled(cancel_callback)
     check_timeout(time.time())
     email, dev_token = get_email_and_token()
     if not email or not dev_token:
-        raise Exception("鑾峰彇閭澶辫触")
+        raise Exception("获取邮箱失败")
     if log_callback:
-        log_callback(f"[*] 宸插垱寤洪偖绠? {email}")
+        log_callback(f"[*] 已创建邮箱: {email}")
+
+    # Cookie banner blocks Sign up click on accounts.x.ai
+    dismiss_cookie_banner(page, log_callback)
+    human_sleep(0.4, cancel_callback)
+
     deadline = time.time() + timeout
+    last_state = ""
     while time.time() < deadline:
         raise_if_cancelled(cancel_callback)
+        dismiss_cookie_banner(page, log_callback)
+
         filled = page.run_js(
-            """
+            r"""
 const email = arguments[0];
 function isVisible(node) {
-    if (!node) return false;
-    const style = window.getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+  if (!node) return false;
+  const style = window.getComputedStyle(node);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const rect = node.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
-const input = Array.from(document.querySelectorAll('input[data-testid="email"], input[name="email"], input[type="email"], input[autocomplete="email"]')).find((node) => isVisible(node) && !node.disabled && !node.readOnly) || null;
+const selectors = [
+  'input[data-testid="email"]',
+  'input[name="email"]',
+  'input[type="email"]',
+  'input[autocomplete="email"]',
+  'input[id*="email" i]',
+  'input[placeholder*="email" i]',
+  'input[placeholder*="Email" i]',
+  'form input[type="text"]',
+];
+let input = null;
+for (const sel of selectors) {
+  try {
+    const nodes = Array.from(document.querySelectorAll(sel));
+    input = nodes.find((n) => isVisible(n) && !n.disabled && !n.readOnly) || null;
+    if (input) break;
+  } catch (e) {}
+}
+if (!input) {
+  // last resort: first visible text-like input
+  input = Array.from(document.querySelectorAll('input')).find((n) => {
+    if (!isVisible(n) || n.disabled || n.readOnly) return false;
+    const t = (n.type || 'text').toLowerCase();
+    return t === 'text' || t === 'email' || t === 'search' || t === '';
+  }) || null;
+}
 if (!input) return 'not-ready';
-input.focus(); input.click();
-// 清空并设置值
-const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+input.scrollIntoView({ block: 'center', inline: 'nearest' });
+input.focus();
+try { input.click(); } catch (e) {}
+const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
 const tracker = input._valueTracker;
 if (tracker) tracker.setValue('');
 if (valueSetter) valueSetter.call(input, email); else input.value = email;
-// 完整事件序列，确保 React 受控组件同步
 input.dispatchEvent(new Event('focus', { bubbles: true }));
 input.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, data: email, inputType: 'insertText' }));
 input.dispatchEvent(new InputEvent('input', { bubbles: true, data: email, inputType: 'insertText' }));
 input.dispatchEvent(new Event('change', { bubbles: true }));
-input.dispatchEvent(new Event('blur', { bubbles: true }));
-// 验证：值已写入即可（不依赖 checkValidity，部分站点自定义校验会导致误判）
+input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
 const current = (input.value || '').trim();
 if (current === email) return 'filled';
-// 兜底：尝试逐字符输入
-input.value = '';
+// char-by-char fallback
+if (valueSetter) valueSetter.call(input, ''); else input.value = '';
 input.dispatchEvent(new Event('input', { bubbles: true }));
 for (const ch of email) {
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
-    input.value += ch;
-    input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
-    input.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+  if (valueSetter) valueSetter.call(input, (input.value || '') + ch); else input.value = (input.value || '') + ch;
+  input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
+  input.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
 }
 input.dispatchEvent(new Event('change', { bubbles: true }));
 if ((input.value || '').trim() === email) return 'filled';
-return input.value;
+return 'value=' + String(input.value || '');
             """,
             email,
         )
+        last_state = str(filled)
         if filled == "not-ready":
             human_sleep(0.5, cancel_callback)
             continue
         if filled != "filled":
             if log_callback:
-                log_callback(f"[Debug] 邮箱输入框已出现，但写入失败: {filled}")
+                log_callback(f"[Debug] 邮箱输入框写入失败: {filled}")
             human_sleep(0.5, cancel_callback)
             continue
-        human_sleep(0.8, cancel_callback)
+
+        human_sleep(0.6, cancel_callback)
         clicked = page.run_js(
             r"""
 function isVisible(node) {
-    if (!node) return false;
-    const style = window.getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-    const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+  if (!node) return false;
+  const style = window.getComputedStyle(node);
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const rect = node.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
-const input = Array.from(document.querySelectorAll('input[data-testid="email"], input[name="email"], input[type="email"], input[autocomplete="email"]')).find((node) => isVisible(node) && !node.disabled && !node.readOnly) || null;
-if (!input || !input.checkValidity() || !(input.value || '').trim()) return false;
-const buttons = Array.from(document.querySelectorAll('button[type="submit"], button')).filter((node) => isVisible(node) && !node.disabled && node.getAttribute('aria-disabled') !== 'true');
-const submitButton = buttons.find((node) => {
-    const text = (node.innerText || node.textContent || '').replace(/\s+/g, '');
-    const lower = text.toLowerCase();
-    return (
-        text === '注册' ||
-        text.includes('注册') ||
-        lower.includes('sign up') ||
-        lower.includes('continue') ||
-        lower.includes('next')
-    );
-});
-if (!submitButton || submitButton.disabled) return false;
-submitButton.click();
-return true;
+const prefer = document.querySelector(
+  'button[data-testid="sign-up-submit"], button[data-testid="signup-submit"], button[data-testid="sign-in-submit"], button[type="submit"]'
+);
+const buttons = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"]'));
+function score(node) {
+  if (!node || !isVisible(node)) return -1;
+  if (node.disabled || node.getAttribute('aria-disabled') === 'true') return -1;
+  const raw = (node.innerText || node.textContent || node.value || '').replace(/\s+/g, ' ').trim();
+  const lower = raw.toLowerCase();
+  const compact = lower.replace(/\s+/g, '');
+  // cookie buttons must never be treated as signup
+  if (compact.includes('cookie') || compact.includes('reject') || compact.includes('settings')) return -1;
+  if (compact === 'signup' || compact === 'register' || compact.includes('signup') || compact.includes('createaccount')) return 100;
+  if (compact === 'continue' || compact === 'next' || compact.includes('下一步') || compact === '注册') return 90;
+  if (lower.includes('sign up') || lower.includes('sign-up')) return 95;
+  if (node.type === 'submit') return 50;
+  return -1;
+}
+let best = null;
+let bestScore = -1;
+const pool = prefer ? [prefer, ...buttons] : buttons;
+for (const b of pool) {
+  const s = score(b);
+  if (s > bestScore) { bestScore = s; best = b; }
+}
+if (!best || bestScore < 0) return 'no-btn';
+// ensure email still filled
+const emailInput = document.querySelector('input[type="email"], input[name="email"], input[data-testid="email"], input[autocomplete="email"]');
+if (emailInput && !(emailInput.value || '').trim()) return 'empty-email';
+best.scrollIntoView({ block: 'center', inline: 'nearest' });
+best.click();
+return 'clicked:' + ((best.innerText || best.textContent || '').trim().slice(0, 30));
             """
         )
-        if clicked:
+        last_state = str(clicked)
+        if clicked and str(clicked).startswith("clicked"):
             if log_callback:
-                log_callback(f"[*] 已填写邮箱并点击注册: {email}")
+                log_callback(f"[*] 已填写邮箱并点击注册: {email} ({clicked})")
             dump_state(page, "email-submitted")
             take_screenshot(page, "email-submitted")
             return email, dev_token
+        if log_callback and clicked:
+            log_callback(f"[Debug] 点击注册按钮结果: {clicked}")
         human_sleep(0.5, cancel_callback)
-    raise Exception("未找到邮箱输入框或注册按钮")
+
+    # diagnostics
+    try:
+        diag = page.run_js(
+            r"""
+const inputs = Array.from(document.querySelectorAll('input')).map((n) => ({
+  type: n.type, name: n.name, testid: n.getAttribute('data-testid'),
+  ph: n.placeholder, val: (n.value||'').slice(0,40),
+  vis: !!(n.offsetWidth || n.offsetHeight)
+}));
+const buttons = Array.from(document.querySelectorAll('button')).slice(0, 12).map((n) => (n.innerText||'').trim().slice(0,40));
+return {url: location.href, title: document.title, inputs, buttons};
+"""
+        )
+        if log_callback:
+            log_callback(f"[Debug] email-stage diag: {diag}")
+    except Exception:
+        pass
+    raise Exception(f"未找到邮箱输入框或注册按钮 (last={last_state})")
+
 
 
 def fill_code_and_submit(email, dev_token, timeout=180, log_callback=None, cancel_callback=None):
