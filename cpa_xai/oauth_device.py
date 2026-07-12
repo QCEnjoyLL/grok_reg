@@ -50,33 +50,46 @@ def _post_form(
     timeout: float = 30.0,
     *,
     proxy: str | None = None,
+    retries: int = 3,
 ) -> tuple[int, dict[str, Any] | str]:
     data = urllib.parse.urlencode(form).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-            "User-Agent": "grok-reg-cpa-xai-minter/1.0",
-        },
-    )
-    opener = _opener(proxy)
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            status = getattr(resp, "status", 200) or 200
-            try:
-                return int(status), json.loads(body)
-            except json.JSONDecodeError:
-                return int(status), body
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
+    last_err: Exception | None = None
+    for attempt in range(1, max(1, retries) + 1):
+        req = urllib.request.Request(
+            url,
+            data=data,
+            method="POST",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": "grok-reg-cpa-xai-minter/1.0",
+                "Connection": "close",
+            },
+        )
+        opener = _opener(proxy)
         try:
-            return int(e.code), json.loads(body)
-        except json.JSONDecodeError:
-            return int(e.code), body
+            with opener.open(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                status = getattr(resp, "status", 200) or 200
+                try:
+                    return int(status), json.loads(body)
+                except json.JSONDecodeError:
+                    return int(status), body
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            try:
+                return int(e.code), json.loads(body)
+            except json.JSONDecodeError:
+                return int(e.code), body
+        except Exception as e:  # SSL EOF / proxy reset — retry
+            last_err = e
+            if attempt < retries:
+                time.sleep(0.6 * attempt)
+                continue
+            raise
+    if last_err:
+        raise last_err
+    raise RuntimeError("POST failed")
 
 
 @dataclass

@@ -746,7 +746,7 @@ def _handle_task_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _start_register_job(body)
     if action in ("backfill", "job_backfill"):
         body = BackfillBody(
-            limit=int(payload.get("limit", 1) or 1),
+            limit=int(payload["limit"]) if payload.get("limit") is not None else 0,
             email=str(payload.get("email", "") or ""),
             timeout=int(payload.get("timeout", 300) or 300),
             probe=bool(payload.get("probe", True)),

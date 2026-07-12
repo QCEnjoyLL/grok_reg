@@ -1,5 +1,5 @@
 (() => {
-  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "gen_cpa_started": "已开始为缺失账号生成 CPA", "gen_cpa_one": "已开始生成 CPA（1个）", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "成功", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
+  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "gen_cpa_started": "已开始为缺失账号生成 CPA", "gen_cpa_one": "已开始生成 CPA（1个）", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "提示", "hint_title": "提示", "run_title": "任务", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
   function getToken() { return localStorage.getItem("web_token") || ""; }
   function setToken(t) { localStorage.setItem("web_token", t || ""); }
   function authHeaders(json = true) {
@@ -55,10 +55,19 @@
     const host = ensureToastHost();
     const el = document.createElement("div");
     el.className = "toast-item " + (type === "err" ? "err" : "ok");
-    const t = title || (type === "err" ? (__S.save_fail_title || __S.err_title || "Error") : (__S.save_ok_title || __S.ok_title || "OK"));
+    // Only use explicit title; never default to "保存成功" for non-save actions
+    let t = title;
+    if (!t) {
+      if (type === "err") t = __S.err_title || "失败";
+      else t = __S.hint_title || __S.ok_title || "提示";
+    }
     el.innerHTML = '<div class="toast-title"></div><div class="toast-msg"></div>';
     el.querySelector(".toast-title").textContent = t;
     el.querySelector(".toast-msg").textContent = String(msg || "");
+    // hide empty title bar spacing
+    if (!String(t || "").trim()) {
+      el.querySelector(".toast-title").style.display = "none";
+    }
     host.appendChild(el);
     setTimeout(() => {
       el.style.opacity = "0";
@@ -66,15 +75,30 @@
       setTimeout(() => el.remove(), 220);
     }, type === "err" ? 4500 : 2800);
   }
-  function toast(msg, type = "ok", title = "") {
-    // always popup
-    popupToast(msg, type, title);
-    // also append to log if present
+  /** log-only toast: no green popup (for progress / job status) */
+  function logToast(msg) {
     const log = document.getElementById("log");
     if (log) {
       log.textContent += (log.textContent ? "\n" : "") + "[ui] " + msg;
       log.scrollTop = log.scrollHeight;
     }
+  }
+  /** soft corner toast without "保存成功" title */
+  function toast(msg, type = "ok", title = "") {
+    const isSave = title === __S.save_ok_title || title === __S.save_fail_title
+      || title === "保存成功" || title === "保存失败";
+    if (!title && type === "ok" && !isSave) {
+      // progress messages go to log; light toast with 提示
+      popupToast(msg, type, __S.hint_title || "提示");
+    } else {
+      popupToast(msg, type, title || (type === "err" ? (__S.err_title || "失败") : (__S.hint_title || "提示")));
+    }
+    logToast(msg);
+  }
+  /** only for real save buttons */
+  function toastSave(msg, ok = true) {
+    popupToast(msg, ok ? "ok" : "err", ok ? (__S.save_ok_title || "保存成功") : (__S.save_fail_title || "保存失败"));
+    logToast(msg);
   }
   function setBadge(job) {
     const el = document.getElementById("run-badge");
@@ -386,7 +410,7 @@
     const errors = [];
 
     async function tryChannel(name, fn, requireJob = true) {
-      toast("[ui] " + name + " ...");
+      logToast(name + " ...");
       try {
         const res = await fn();
         if (!res) {
@@ -397,7 +421,7 @@
         if (requireJob && !hasJob && res.ok) {
           // e.g. old image accepted PUT /api/config but ignored _cmd
           errors.push(name + ": no job in response");
-          toast("[ui] " + name + " no job field, try next", "err");
+          logToast(name + " no job field, try next");
           return null;
         }
         if (res.ok || hasJob) return res.job_result || res;
@@ -406,7 +430,7 @@
       } catch (err) {
         const msg = String(err.message || err);
         errors.push(name + ": " + msg);
-        toast("[ui] " + name + " failed: " + msg, "err");
+        logToast(name + " failed: " + msg);
         return null;
       }
     }
@@ -680,10 +704,10 @@
     try {
       const config = JSON.parse(document.getElementById("config-editor").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config }) });
-      toast(__S.cfg_saved, "ok", __S.save_ok_title);
+      toastSave(__S.cfg_saved, true);
       refreshStatus();
       refreshConfig();
-    } catch (err) { toast(__S.save_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
+    } catch (err) { toastSave(__S.save_fail + ": " + (err.message || err), false); }
   });
 
   document.getElementById("btn-save-cpa")?.addEventListener("click", async () => {
@@ -701,20 +725,20 @@
       };
       if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });
-      toast(__S.cpa_saved, "ok", __S.save_ok_title);
+      toastSave(__S.cpa_saved, true);
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast("CPA " + __S.save_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
+    } catch (err) { toastSave("CPA " + __S.save_fail + ": " + (err.message || err), false); }
   });
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {
     try {
       const patch = collectQuickConfig();
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
-      toast(__S.quick_saved, "ok", __S.save_ok_title);
+      toastSave(__S.quick_saved, true);
       await refreshConfig();
       await refreshStatus();
-    } catch (err) { toast(__S.quick_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
+    } catch (err) { toastSave(__S.quick_fail + ": " + (err.message || err), false); }
   });
 
   document.getElementById("form-settings").addEventListener("submit", async (e) => {
@@ -729,10 +753,10 @@
       const res = await api("/api/settings", { method: "PUT", body: JSON.stringify(body) });
       if (body.web_token) setToken(body.web_token);
       document.getElementById("set-token").value = "";
-      toast(res.token_changed ? __S.set_saved_token : __S.set_saved, "ok", __S.save_ok_title);
+      toastSave(res.token_changed ? __S.set_saved_token : __S.set_saved, true);
       await refreshSettings();
       applyNovncUrl(res.settings.novnc_url);
-    } catch (err) { toast(__S.set_fail + ": " + (err.message || err), "err", __S.save_fail_title); }
+    } catch (err) { toastSave(__S.set_fail + ": " + (err.message || err), false); }
   });
 
   document.getElementById("btn-logout").addEventListener("click", async () => {
