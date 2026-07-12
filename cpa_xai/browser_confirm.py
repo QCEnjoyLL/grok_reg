@@ -743,30 +743,173 @@ def approve_device_code(
                 _sleep(2.0)
                 continue
 
-        # Cookie banner (exact labels only)
-        if "全部允许" in text or "隐私偏好" in text:
-            _click_exact(page, ["全部允许", "全部拒绝"], log, real=False)
-            _sleep(0.5)
+        # Cookie banner (EN + ZH)
+        low = (text or "").lower()
+        if (
+            "accept all cookies" in low
+            or "reject all" in low
+            or "cookie settings" in low
+            or "全部允许" in text
+            or "隐私偏好" in text
+            or "接受全部" in text
+            or "接受所有" in text
+        ):
+            if _click_exact(
+                page,
+                [
+                    "Accept All Cookies",
+                    "Accept all cookies",
+                    "Accept All",
+                    "Reject All",
+                    "Reject all",
+                    "全部允许",
+                    "全部拒绝",
+                    "接受全部",
+                    "接受所有",
+                ],
+                log,
+                real=False,
+            ):
+                log("dismissed cookie banner")
+                _sleep(0.6)
+                continue
+            # JS fallback for cookie modal
+            try:
+                clicked = page.run_js(
+                    r"""
+const labels = ['accept all cookies','accept all','reject all','全部允许','接受全部','接受所有'];
+const nodes = Array.from(document.querySelectorAll('button, [role="button"], a'));
+for (const n of nodes) {
+  const s = (n.innerText || n.textContent || '').replace(/\s+/g,' ').trim().toLowerCase();
+  if (!s) continue;
+  if (labels.some(l => s === l || s.includes(l))) { n.click(); return s; }
+}
+return false;
+"""
+                )
+                if clicked:
+                    log(f"dismissed cookie via JS: {clicked}")
+                    _sleep(0.6)
+                    continue
+            except Exception:
+                pass
 
-        # Sign-in chooser
-        if "使用邮箱登录" in text or "Continue with email" in text:
-            if _click_exact(page, ["使用邮箱登录", "Continue with email", "Sign in with email"], log, real=False):
+        # Sign-in chooser (EN: Login with email / Continue with email)
+        if (
+            "使用邮箱登录" in text
+            or "Login with email" in text
+            or "Log in with email" in text
+            or "Continue with email" in text
+            or "Sign in with email" in text
+            or "login with email" in low
+        ):
+            # Prefer data-testid then text
+            try:
+                el = page.ele('css:button[data-testid="continue-with-email"]', timeout=0.4)
+                if el:
+                    el.click(by_js=True)
+                    log("clicked continue-with-email testid")
+                    _sleep(1.5)
+                    phase = "email"
+                    continue
+            except Exception:
+                pass
+            if _click_exact(
+                page,
+                [
+                    "Login with email",
+                    "Log in with email",
+                    "Sign in with email",
+                    "Continue with email",
+                    "使用邮箱登录",
+                    "使用邮箱",
+                ],
+                log,
+                real=False,
+            ):
                 _sleep(1.5)
                 phase = "email"
                 continue
+            try:
+                clicked = page.run_js(
+                    r"""
+const prefer = document.querySelector('button[data-testid="continue-with-email"], a[data-testid="continue-with-email"]');
+if (prefer) { prefer.click(); return 'testid'; }
+const nodes = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+const t = nodes.find(n => {
+  const s = (n.innerText || n.textContent || '').replace(/\s+/g,' ').trim().toLowerCase();
+  return s.includes('login with email') || s.includes('log in with email')
+    || s.includes('continue with email') || s.includes('sign in with email')
+    || s.includes('使用邮箱');
+});
+if (t) { t.click(); return (t.innerText||'').trim().slice(0,40); }
+return false;
+"""
+                )
+                if clicked:
+                    log(f"clicked email login via JS: {clicked}")
+                    _sleep(1.5)
+                    phase = "email"
+                    continue
+            except Exception as e:
+                log(f"email chooser JS fail: {e}")
 
         # Email only step
-        if page.ele("css:input[type='email']", timeout=0.3) and not page.ele(
-            "css:input[type='password']", timeout=0.2
-        ):
+        email_sel = (
+            "css:input[data-testid='email'], css:input[type='email'], css:input[name='email'], css:input[autocomplete='email']"
+        )
+        pass_sel = (
+            "css:input[data-testid='password'], css:input[type='password'], css:input[name='password']"
+        )
+        has_email = bool(
+            page.ele("css:input[data-testid='email']", timeout=0.2)
+            or page.ele("css:input[type='email']", timeout=0.2)
+            or page.ele("css:input[name='email']", timeout=0.2)
+        )
+        has_pass = bool(
+            page.ele("css:input[data-testid='password']", timeout=0.2)
+            or page.ele("css:input[type='password']", timeout=0.2)
+        )
+        if has_email and not has_pass:
             phase = "email"
-            _fill(page, "css:input[type='email']", email, log, "email")
-            if _click_exact(page, ["下一步", "Next", "Continue", "继续"], log, real=False):
+            filled = False
+            for sel in [
+                "css:input[data-testid='email']",
+                "css:input[type='email']",
+                "css:input[name='email']",
+                "css:input[autocomplete='email']",
+            ]:
+                try:
+                    if page.ele(sel, timeout=0.2):
+                        _fill(page, sel, email, log, "email")
+                        filled = True
+                        break
+                except Exception:
+                    pass
+            if not filled:
+                _fill(page, "css:input[type='email']", email, log, "email")
+            if _click_exact(
+                page,
+                ["下一步", "Next", "Continue", "继续", "Sign in", "Log in"],
+                log,
+                real=False,
+            ):
                 _sleep(1.8)
                 continue
+            try:
+                el = page.ele("css:button[data-testid='sign-in-submit']", timeout=0.4) or page.ele(
+                    "css:button[type='submit']", timeout=0.4
+                )
+                if el:
+                    el.click(by_js=True)
+                    log("clicked email next submit")
+                    _sleep(1.8)
+                    continue
+            except Exception:
+                pass
 
         # Password login
-        if page.ele("css:input[type='password']", timeout=0.3):
+        if has_pass or page.ele("css:input[type='password']", timeout=0.3):
             phase = "password"
             if login_attempts >= 5:
                 _sleep(1.0)
