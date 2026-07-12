@@ -229,7 +229,11 @@
       return;
     }
     const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? esc(r.sso_preview || "有") : "-"}</td></tr>`).join("");
-    box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>${esc(__S.password)}</th><th>SSO</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.innerHTML = `<table>
+      <colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"></colgroup>
+      <thead><tr><th>${esc(__S.email)}</th><th>${esc(__S.password)}</th><th>SSO</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   }
   async function refreshCpa() {
     const data = await api("/api/cpa?limit=50");
@@ -241,10 +245,18 @@
     const rows = data.items.map((r) => {
       const file = r.file || ("xai-" + (r.email || "") + ".json");
       const href = withToken("/api/download/cpa/" + encodeURIComponent(file));
-      return `<tr><td>${esc(r.email)}</td><td>${esc(r.mtime)}</td><td>${r.size}</td>`
-        + `<td><a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a></td></tr>`;
+      return `<tr>
+        <td>${esc(r.email)}</td>
+        <td>${esc(r.mtime)}</td>
+        <td>${r.size}</td>
+        <td class="col-act"><a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a></td>
+      </tr>`;
     }).join("");
-    box.innerHTML = `<table><thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.innerHTML = `<table>
+      <colgroup><col class="col-email"><col class="col-mtime"><col class="col-size"><col class="col-act"></colgroup>
+      <thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th><th class="col-act"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   }
   async function refreshConfig() {
     const data = await api("/api/config?redact=true");

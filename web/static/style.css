@@ -44,6 +44,11 @@ h1 { margin: 0; font-size: 1.25rem; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
+}
+.grid > .card {
+  width: 100%;
+  min-width: 0;
 }
 .card {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
@@ -52,10 +57,21 @@ h1 { margin: 0; font-size: 1.25rem; }
   padding: 16px 16px 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,.25);
 }
-.card.wide { grid-column: 1 / -1; }
+.card.wide {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
 .card h2 { margin: 0 0 12px; font-size: 1rem; }
-.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.card-head h2 { margin: 0; }
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.card-head h2 { margin: 0; flex: 1 1 auto; min-width: 0; }
+.card-head .row { flex: 0 1 auto; justify-content: flex-end; }
 .stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px;
 }
@@ -120,10 +136,45 @@ h1 { margin: 0; font-size: 1.25rem; }
   border: 1px solid var(--line); border-radius: 10px; padding: 12px;
   font-family: var(--mono); font-size: 12px; line-height: 1.45; white-space: pre-wrap;
 }
-.table-wrap { max-height: 280px; overflow: auto; font-size: 0.86rem; }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel2); }
+.table-wrap {
+  width: 100%;
+  max-height: 280px;
+  min-height: 120px;
+  overflow: auto;
+  font-size: 0.86rem;
+}
+table {
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+th, td {
+  text-align: left;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+th {
+  color: var(--muted);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: var(--panel2);
+  z-index: 1;
+}
+/* shared data tables under accounts / cpa cards */
+#accounts-table table col.col-email,
+#cpa-table table col.col-email { width: 34%; }
+#accounts-table table col.col-pass { width: 28%; }
+#accounts-table table col.col-sso { width: 38%; }
+#cpa-table table col.col-mtime { width: 28%; }
+#cpa-table table col.col-size { width: 14%; }
+#cpa-table table col.col-act { width: 14%; }
+#cpa-table td.col-act,
+#cpa-table th.col-act { text-align: right; white-space: nowrap; word-break: normal; }
 .editor {
   width: 100%; min-height: 280px; border-radius: 10px; border: 1px solid var(--line);
   background: #070d1a; color: #d6e2ff; font-family: var(--mono); font-size: 12px;
