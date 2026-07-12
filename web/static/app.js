@@ -643,7 +643,39 @@
     } catch (err) { toast(String(err.message || err)); }
   }
 
+
+  async function refreshBuild() {
+    try {
+      const h = await api("/api/health", { timeoutMs: 5000 });
+      const el = document.getElementById("build-badge");
+      if (el && h) el.textContent = "build " + (h.build || h.version || "?");
+    } catch (_) {}
+  }
+
+  document.getElementById("btn-emergency-start")?.addEventListener("click", async () => {
+    const body = {
+      extra: Number(document.querySelector('#form-register [name="extra"]')?.value || 1),
+      threads: Number(document.querySelector('#form-register [name="threads"]')?.value || 1),
+      mint_workers: Number(document.querySelector('#form-register [name="mint_workers"]')?.value || -1),
+      fast: !!document.querySelector('#form-register [name="fast"]')?.checked,
+    };
+    try {
+      toast("[ui] emergency start via PUT /api/config _cmd");
+      const res = await api("/api/config", {
+        method: "PUT",
+        timeoutMs: 12000,
+        body: JSON.stringify({ config: { _cmd: { action: "start", ...body } } }),
+      });
+      toast(__S.reg_started + " pid=" + ((res.job && res.job.pid) || (res.job_result && res.job_result.job && res.job_result.job.pid) || "?"));
+      await refreshStatus();
+    } catch (err) {
+      toast("emergency failed: " + (err.message || err), "err");
+      alert("emergency failed: " + (err.message || err));
+    }
+  });
+
   connectWs();
+  refreshBuild();
   bootstrap();
   setInterval(() => {
     refreshStatus().catch(() => {});

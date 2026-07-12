@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v={{ build }}" />
 </head>
 <body>
   <div id="toast-host" aria-live="polite"></div>
@@ -19,6 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <span id="build-badge" class="badge idle" title="build">build {{ build }}</span>
         <span id="run-badge" class="badge idle">空闲</span>
         <button id="btn-refresh" class="btn ghost" type="button">刷新状态</button>
         <button id="btn-logout" class="btn ghost" type="button">退出</button>
@@ -207,6 +208,7 @@
           <label class="check"><input type="checkbox" name="fast" checked /> 快速模式</label>
           <div class="row">
             <button type="submit" class="btn primary">开始注册</button>
+            <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
             <button type="button" id="btn-stop" class="btn danger">停止</button>
           </div>
         </form>
@@ -267,7 +269,7 @@
   <script>
     window.__NOVNC_URL__ = {{ novnc_url|tojson }};
   </script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v={{ build }}"></script>
   <iframe id="job-frame" name="job-frame" style="display:none" title="job"></iframe>
 </body>
 </html>

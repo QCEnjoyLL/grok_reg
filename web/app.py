@@ -31,6 +31,8 @@ if str(APP_HOME) not in sys.path:
 
 MAX_LOG_LINES = 4000
 DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "Grok Register")
+BUILD_ID = os.environ.get("BUILD_ID", "deadlock-fix-1")
+APP_VERSION = os.environ.get("APP_VERSION", "1.2.0")
 SETTINGS_FILE = DATA_DIR / "ui_settings.json"
 ENV_BOOT_TOKEN = os.environ.get("WEB_TOKEN", "").strip()
 ENV_BOOT_NOVNC = os.environ.get("NOVNC_PUBLIC_URL", "").strip()
@@ -163,7 +165,7 @@ def mask_secret(value: str, keep: int = 3) -> str:
 
 class JobManager:
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.proc: subprocess.Popen[str] | None = None
         self.kind: str | None = None
         self.cmd: list[str] = []
@@ -235,6 +237,8 @@ class JobManager:
             return list(self.logs)[-tail:]
 
     def start(self, kind: str, cmd: list[str], env: dict[str, str] | None = None) -> None:
+        # NOTE: must not call append_log while holding a non-reentrant lock.
+        # Use RLock + prepare env outside critical section where possible.
         with self._lock:
             if self.proc is not None and self.proc.poll() is None:
                 raise RuntimeError("已有任务在运行，请先停止")
@@ -246,11 +250,14 @@ class JobManager:
             self.logs.clear()
             self.stats = {k: 0 for k in self.stats}
             self.kind = kind
-            self.cmd = cmd
+            self.cmd = list(cmd)
             self.started_at = _now_iso()
             self.finished_at = None
             self.exit_code = None
-            self.append_log(f"$ {' '.join(cmd)}")
+            cmd_line = "$ " + " ".join(cmd)
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.logs.append(f"[{ts}] {cmd_line}")
+
             self.proc = subprocess.Popen(
                 cmd,
                 cwd=str(APP_HOME),
@@ -261,22 +268,23 @@ class JobManager:
                 bufsize=1,
                 universal_newlines=True,
             )
+            proc = self.proc
 
-            def _reader() -> None:
-                assert self.proc is not None and self.proc.stdout is not None
-                try:
-                    for line in self.proc.stdout:
-                        self.append_log(line)
-                finally:
-                    code = self.proc.poll()
-                    with self._lock:
-                        self.exit_code = code
-                        self.finished_at = _now_iso()
-                    self.append_log(f"[job] exited code={code}")
+        def _reader() -> None:
+            assert proc is not None and proc.stdout is not None
+            try:
+                for line in proc.stdout:
+                    self.append_log(line)
+            finally:
+                code = proc.poll()
+                with self._lock:
+                    self.exit_code = code
+                    self.finished_at = _now_iso()
+                self.append_log(f"[job] exited code={code}")
 
-            threading.Thread(target=_reader, daemon=True, name="job-log-reader").start()
+        threading.Thread(target=_reader, daemon=True, name="job-log-reader").start()
 
-    def stop(self, timeout: float = 15.0) -> bool:
+    def stop(self, timeout: float = 8.0) -> bool:
         with self._lock:
             proc = self.proc
         if proc is None or proc.poll() is not None:
@@ -285,16 +293,27 @@ class JobManager:
         try:
             proc.send_signal(signal.SIGTERM)
         except Exception:
-            proc.terminate()
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self.append_log("[job] SIGKILL...")
-            proc.kill()
             try:
-                proc.wait(timeout=5)
+                proc.terminate()
             except Exception:
                 pass
+
+        def _wait_kill() -> None:
+            try:
+                proc.wait(timeout=timeout)
+            except Exception:
+                self.append_log("[job] SIGKILL...")
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=3)
+                except Exception:
+                    pass
+
+        # do not block API forever
+        threading.Thread(target=_wait_kill, daemon=True, name="job-stop-wait").start()
         return True
 
 
@@ -370,6 +389,16 @@ threading.Thread(target=_pending_job_worker, daemon=True, name="pending-job-work
 
 app = FastAPI(title=DASHBOARD_TITLE, version="1.1.0")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+
+@app.middleware("http")
+async def no_cache_assets(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html") or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
 init_runtime_token()
 
 
@@ -455,6 +484,8 @@ def health():
         "data_dir": str(DATA_DIR),
         "job_running": jobs.is_running(),
         "auth_required": True,
+        "build": BUILD_ID,
+        "version": APP_VERSION,
     }
 
 
@@ -463,7 +494,7 @@ async def login_page(request: Request):
     return TEMPLATES.TemplateResponse(
         request,
         "login.html",
-        {"title": DASHBOARD_TITLE},
+        {"title": DASHBOARD_TITLE, "build": BUILD_ID, "version": APP_VERSION},
     )
 
 
@@ -504,6 +535,8 @@ async def index(request: Request):
         {
             "title": DASHBOARD_TITLE,
             "novnc_url": build_novnc_url(request),
+            "build": BUILD_ID,
+            "version": APP_VERSION,
         },
     )
 
