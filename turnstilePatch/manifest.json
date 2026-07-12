@@ -1,8 +1,8 @@
-{
+﻿{
   "manifest_version": 3,
   "name": "Turnstile Patch",
-  "version": "1.0.1",
-  "description": "Patch browser automation detection for Turnstile (MV3)",
+  "version": "1.1.0",
+  "description": "Patch automation signals and assist Turnstile (MV3 MAIN world)",
   "content_scripts": [
     {
       "matches": [

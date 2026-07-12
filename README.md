@@ -1,4 +1,4 @@
-# Grok Register (grok_reg)
+﻿# Grok Register (grok_reg)
 
 基于 **Chromium + DrissionPage + turnstilePatch** 的免费 Grok 账号注册机，支持 Docker 部署与 Web 后台。
 
@@ -8,6 +8,7 @@
 |------|------|
 | `accounts_cli.txt` | `email----password----sso` |
 | `cpa_auths/xai-*.json` | 免费 Grok 4.5 用 OIDC / CPA 认证 |
+| `sub2api_exports/` | 可选：sub2api 单账号与合并导入 JSON |
 
 > **SSO ≠ CPA/OIDC**。`accounts_cli.txt` 里的 SSO 只是登录态 cookie；免费 Grok 4.5 还需要再生成 `cpa_auths/xai-*.json`（有 SSO 时程序会优先走纯 HTTP Device Flow，无需再过登录页验证）。
 
@@ -44,7 +45,7 @@ docker run -d \
 4. `defaultDomains`: 可选，例如 `moemail.app`
 5. `proxy`: 服务器可访问的代理
 6. 系统设置 填 noVNC 公网 URL (例 `http://IP:6089/vnc.html?autoconnect=1&resize=scale`)
-7. 点?开始注册?
+7. 点「开始注册」
 
 高级选项 / 完整 JSON / Backfill 默认折叠。
 
@@ -81,15 +82,40 @@ uv run python grok_register_ttk.py
 ## CLI
 
 ```bash
-uv run python register_cli.py --extra N --threads 1
+# 单线程试跑
+uv run python register_cli.py --extra 1 --threads 1
+
+# 推荐批量：注册 2 + mint 自动/2，开启 fast
+uv run python -u register_cli.py --count 100 --threads 2 --mint-workers 2 --fast
+
+# 更高并发（机器/邮箱/代理扛得住再上）
+uv run python -u register_cli.py --count 100 --threads 4 --mint-workers 4 --fast
+
+# 对已有账号文件追加 N 个
+uv run python -u register_cli.py --extra 50 --threads 2 --mint-workers 2 --fast
+
+# 回填缺失 CPA
 uv run python -u scripts/backfill_cpa_xai_from_accounts.py --limit 1 --probe
 ```
 
 | 参数 | 含义 |
 |------|------|
 | `--extra N` | 再新注册 N 个 |
-| `--count N` | 账本总数目标 |
-| `--threads N` | 并发 1-10 |
+| `--count N` | 账本总数目标（`0`=不限） |
+| `--threads N` | 注册并发 1–10 |
+| `--mint-workers N` | CPA mint 并发：`-1` 自动；`0` 内联；`1–10` 固定 |
+| `--mint-queue-max N` | mint 队列背压；`-1`≈`2×mint_workers`；`0` 不限制 |
+| `--fast` / `--no-fast` | 压缩等待（默认开） |
+
+流水线：`注册线程 R → mint_queue → mint workers M`，峰值浏览器约 **R + M**。  
+有 SSO 时 mint 优先纯 HTTP，通常不需要再开一堆登录浏览器。
+
+### 批量调参建议
+
+- 先从 `--threads 2 --mint-workers 2` 稳住，再往上加
+- mint 慢、注册快时，让 `mint_workers ≥ threads` 更平衡
+- 批量可关 `cpa_probe_after_write` 提速（写完再抽查）
+- 线程越高，Chrome 内存与 OAuth `rate_limited` 风险越高
 
 ## Docker / GHCR
 
@@ -109,6 +135,7 @@ docker compose pull && docker compose up -d
 /data/ui_settings.json      # token / noVNC URL
 /data/accounts_cli.txt
 /data/cpa_auths/xai-*.json
+/data/sub2api_exports/      # 可选 sub2api 导出
 /data/logs/
 ```
 
@@ -125,7 +152,7 @@ docker compose pull && docker compose up -d
 grok_reg/
   register_cli.py
   grok_register_ttk.py
-  cpa_export.py / cpa_xai/
+  cpa_export.py / cpa_to_sub2api.py / cpa_xai/
   web/                 # dashboard
   docker/              # entrypoint + Xvfb/noVNC
   Dockerfile
@@ -141,4 +168,4 @@ grok_reg/
 2. **有 SSO**：优先 `curl_cffi` 纯 HTTP Device Flow（不过登录页 Turnstile）
 3. **SSO 失效/没有**：回退浏览器登录（可能需 noVNC 手点 Cloudflare）
 4. 成功写入 `/data/cpa_auths/xai-<email>.json`
-
+5. 可选：配置 `sub2api_export_enabled=true` 后同步写出 `sub2api_exports/`

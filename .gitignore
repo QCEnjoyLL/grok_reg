@@ -15,6 +15,7 @@ accounts_*.txt
 emails_used.txt
 mail_credentials.txt
 cpa_auths/
+sub2api_exports/
 cookies/
 screenshots/
 *.log
