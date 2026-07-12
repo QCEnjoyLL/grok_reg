@@ -767,8 +767,14 @@ def create_browser_options(proxy_override=_BROWSER_PROXY_UNSET):
     options.set_timeouts(base=1)
     for flag in CHROMIUM_SLIM_FLAGS:
         options.set_argument(flag)
+    # Docker Chromium may reject MV2; also allow extensions explicitly
+    options.set_argument("--disable-features=ExtensionManifestV2Unsupported,ExtensionManifestV2Disabled")
+    options.set_argument("--enable-extensions")
     if os.path.exists(EXTENSION_PATH):
-        options.add_extension(EXTENSION_PATH)
+        try:
+            options.add_extension(EXTENSION_PATH)
+        except Exception as exc:
+            print(f"  [ext] add turnstilePatch failed (will inject JS fallback): {exc}")
     # Apply config.json "proxy" to Chromium. Without this, only HTTP helpers
     # used get_proxies(); the browser itself fell through to system/env proxy.
     if proxy_override is _BROWSER_PROXY_UNSET:
@@ -2228,50 +2234,153 @@ def refresh_active_page():
     return _get_page()
 
 
-def click_email_signup_button(timeout=10, log_callback=None, cancel_callback=None):
+def _inject_stealth_js(page, log_callback=None):
+    """Fallback when turnstilePatch extension fails to load (MV3/Docker)."""
+    if page is None:
+        return
+    js = r"""
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
+  } catch (e) {}
+  return true;
+})()
+"""
+    try:
+        page.run_js(js)
+    except Exception as exc:
+        if log_callback:
+            log_callback(f"[Debug] stealth inject failed: {exc}")
+
+
+def _page_load_diagnostics(page):
+    """Return (kind, detail) for current page. kind=ok|chrome-error|empty|unknown."""
+    if page is None:
+        return "empty", "no page"
+    try:
+        url = str(getattr(page, "url", "") or "")
+    except Exception:
+        url = ""
+    try:
+        title = str(page.run_js("return document.title || '';") or "")
+    except Exception:
+        title = ""
+    try:
+        html = str(getattr(page, "html", "") or "")
+    except Exception:
+        html = ""
+    snippet = html[:800]
+    low = (title + " " + snippet + " " + url).lower()
+    if (
+        "this site can't be reached" in low
+        or "err_tunnel_connection_failed" in low
+        or "err_proxy_connection_failed" in low
+        or "err_connection_timed_out" in low
+        or "err_name_not_resolved" in low
+        or "err_connection_refused" in low
+        or "err_ssl" in low
+        or "chromium error" in low
+        or "chrome-error://" in low
+        or url.startswith("chrome-error://")
+        or "neterror" in low
+    ):
+        # extract error code if present
+        m = re.search(r"(ERR_[A-Z0-9_]+)", snippet + " " + title, re.I)
+        code = m.group(1) if m else "NETWORK_ERROR"
+        return "chrome-error", f"{code} url={url} title={title}"
+    if "accounts.x.ai" in url and (
+        "continue-with-email" in html
+        or "使用邮箱" in html
+        or "Sign up" in html
+        or "sign-up" in html
+        or 'data-testid="email"' in html
+    ):
+        return "ok", url
+    if "accounts.x.ai" in url:
+        return "unknown", f"url={url} title={title} html_len={len(html)}"
+    return "unknown", f"url={url} title={title}"
+
+
+def click_email_signup_button(timeout=20, log_callback=None, cancel_callback=None):
     page = _get_page()
+    _inject_stealth_js(page, log_callback)
     deadline = time.time() + timeout
     while time.time() < deadline:
         raise_if_cancelled(cancel_callback)
+
+        kind, detail = _page_load_diagnostics(page)
+        if kind == "chrome-error":
+            proxy = get_registration_proxy() or "(no proxy)"
+            raise Exception(
+                "注册页无法打开（浏览器网络错误）: "
+                + detail
+                + f" | 当前代理={proxy}。"
+                + " 常见原因: 代理不可达/账号密码错误/上游禁止 CONNECT accounts.x.ai。"
+                + " 请在 VNC 中确认能否打开 https://accounts.x.ai ，并检查 config.proxy。"
+            )
+
         if log_callback:
-            log_callback("[Debug] 尝试查找“使用邮箱注册”按钮...")
+            log_callback("[Debug] 尝试查找邮箱注册/继续按钮...")
 
         clicked = page.run_js(r"""
+// preferred testids used by accounts.x.ai login/signup
+const prefer = document.querySelector(
+  'button[data-testid="continue-with-email"], button[data-testid="signup-with-email"], a[data-testid="continue-with-email"]'
+);
+if (prefer) { prefer.click(); return 'testid'; }
+
 const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
 const target = candidates.find((node) => {
-    const text = (node.innerText || node.textContent || '').replace(/\s+/g, '');
-    const lower = text.toLowerCase();
-    return (
-        text.includes('使用邮箱注册') ||
-        lower.includes('signupwithemail') ||
-        lower.includes('continuewithemail') ||
-        lower.includes('email')
-    );
+  const text = (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim();
+  const lower = text.toLowerCase().replace(/\s+/g, '');
+  return (
+    text.includes('使用邮箱注册') ||
+    text.includes('使用邮箱') ||
+    lower.includes('signupwithemail') ||
+    lower.includes('continuewithemail') ||
+    lower.includes('signinwithemail') ||
+    lower.includes('sign-upwithemail') ||
+    lower === 'email' ||
+    (lower.includes('email') && (lower.includes('continue') || lower.includes('sign')))
+  );
 });
-if (!target) {
-    return false;
-}
+if (!target) return false;
 target.click();
-return true;
+return 'text';
         """)
 
         if clicked:
             if log_callback:
-                log_callback("[*] 已点击「使用邮箱注册」按钮")
+                log_callback(f"[*] 已点击邮箱注册入口 ({clicked})")
             human_sleep(2, cancel_callback)
+            return True
+
+        # maybe already on email form
+        ready = page.run_js(r"""
+const input = document.querySelector('input[data-testid="email"], input[name="email"], input[type="email"]');
+return !!input;
+        """)
+        if ready:
+            if log_callback:
+                log_callback("[*] 已在邮箱输入页，无需再点按钮")
             return True
 
         if log_callback:
             current_url = page.url if page else "none"
-            log_callback(f"[Debug] 当前URL: {current_url}")
+            log_callback(f"[Debug] 当前URL: {current_url} ({detail})")
 
         human_sleep(1, cancel_callback)
 
     if log_callback:
-        page_html = page.html[:500] if page else "no page"
+        page_html = (page.html[:500] if page else "no page")
         log_callback(f"[Debug] 页面内容片段: {page_html}")
 
-    raise Exception("未找到「使用邮箱注册」按钮")
+    kind, detail = _page_load_diagnostics(page)
+    if kind == "chrome-error":
+        raise Exception("注册页网络错误: " + detail)
+    raise Exception("未找到邮箱注册按钮；页面可能未正确加载: " + detail)
+
+
 
 
 def open_signup_page(log_callback=None, cancel_callback=None):
@@ -2298,14 +2407,28 @@ def open_signup_page(log_callback=None, cancel_callback=None):
             restart_browser()
             page = _get_page()
             page.get(SIGNUP_URL)
-    page.wait.doc_loaded()
+    try:
+        page.wait.doc_loaded()
+    except Exception:
+        pass
+    _inject_stealth_js(page, log_callback)
     dump_state(page, "signup-loaded")
     take_screenshot(page, "signup")
     human_sleep(2, cancel_callback)
     if log_callback:
         log_callback(f"[*] 当前URL: {page.url}")
+    kind, detail = _page_load_diagnostics(page)
+    if log_callback:
+        log_callback(f"[Debug] page_diag={kind} {detail}")
+    if kind == "chrome-error":
+        proxy = get_registration_proxy() or "(no proxy)"
+        raise Exception(
+            "无法打开 accounts.x.ai（代理/网络失败）: "
+            + detail
+            + f" | proxy={proxy}"
+        )
     click_email_signup_button(
-        log_callback=log_callback, cancel_callback=cancel_callback
+        timeout=25, log_callback=log_callback, cancel_callback=cancel_callback
     )
     dump_state(page, "after-email-signup-click")
 
@@ -3172,13 +3295,23 @@ def open_login_page(log_callback=None, cancel_callback=None):
     if log_callback:
         log_callback(f"[*] 当前URL: {page.url}")
     # 点击「使用邮箱登录」
-    clicked = page.run_js("""
-const btn = document.querySelector('button[data-testid="continue-with-email"]');
+    _inject_stealth_js(page, log_callback)
+    kind, detail = _page_load_diagnostics(page)
+    if kind == "chrome-error":
+        raise Exception("登录页网络错误: " + detail)
+    clicked = page.run_js(r"""
+const btn = document.querySelector('button[data-testid="continue-with-email"], button[data-testid="signup-with-email"]');
 if (btn) { btn.click(); return 'clicked'; }
+const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+const t = candidates.find(n => {
+  const s = (n.innerText || n.textContent || '').toLowerCase().replace(/\s+/g,'');
+  return s.includes('continuewithemail') || s.includes('使用邮箱') || s.includes('signinwithemail');
+});
+if (t) { t.click(); return 'text'; }
 return 'not-found';
 """)
-    if clicked != 'clicked':
-        raise Exception("未找到「使用邮箱登录」按钮")
+    if clicked == 'not-found':
+        raise Exception("未找到「使用邮箱登录」按钮: " + detail)
     human_sleep(2, cancel_callback)
     if log_callback:
         log_callback("[*] 已点击「使用邮箱登录」")
