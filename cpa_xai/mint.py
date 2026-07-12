@@ -40,6 +40,64 @@ def _extract_sso(sso: str | None, cookies: Any | None) -> str:
     return ""
 
 
+def _classify_probe_failure(pr: dict[str, Any]) -> str:
+    """Build a precise probe error; do not mislabel network/API failures."""
+    if not pr.get("ok"):
+        status = pr.get("status")
+        detail = str(pr.get("error") or "").strip()
+        if detail:
+            return f"token ok but models probe failed: status={status} error={detail[:300]}"
+        return f"token ok but models probe failed: status={status}"
+    ids = pr.get("model_ids") or []
+    return (
+        "token ok but grok-4.5 not listed; models="
+        + str(ids[:20])
+    )
+
+
+def _apply_models_probe(
+    result: dict[str, Any],
+    pr: dict[str, Any],
+    *,
+    log: LogFn,
+    access: str,
+    base_url: str,
+    proxy: str | None,
+    probe_chat: bool,
+) -> None:
+    result["probe_models"] = pr
+    probe_log = (
+        "probe models: ok="
+        + str(pr.get("ok"))
+        + " has_grok_45="
+        + str(pr.get("has_grok_45"))
+        + " ids="
+        + str(pr.get("model_ids"))
+    )
+    if not pr.get("ok") and pr.get("error"):
+        probe_log += " error=" + str(pr.get("error"))[:300]
+    log(probe_log)
+    if not pr.get("has_grok_45"):
+        result["ok"] = False
+        result["error"] = _classify_probe_failure(pr)
+    if probe_chat and pr.get("has_grok_45"):
+        ch = probe_mini_response(access, base_url=base_url, proxy=proxy)
+        result["probe_chat"] = ch
+        log(
+            "probe chat: ok="
+            + str(ch.get("ok"))
+            + " model="
+            + str(ch.get("model"))
+            + " text="
+            + repr(ch.get("text"))
+        )
+        if not ch.get("ok"):
+            result["ok"] = False
+            result["error"] = (
+                "chat probe failed: " + str(ch.get("error") or ch.get("status"))
+            )
+
+
 def _access_token_from_cpa_file(path: str | Path) -> str:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -142,37 +200,15 @@ def mint_and_export(
                         pr = probe_models(
                             access, base_url=base_url, proxy=resolved or None
                         )
-                        result["probe_models"] = pr
-                        log(
-                            "probe models: ok="
-                            + str(pr.get("ok"))
-                            + " has_grok_45="
-                            + str(pr.get("has_grok_45"))
-                            + " ids="
-                            + str(pr.get("model_ids"))
+                        _apply_models_probe(
+                            result,
+                            pr,
+                            log=log,
+                            access=access,
+                            base_url=base_url,
+                            proxy=resolved or None,
+                            probe_chat=probe_chat,
                         )
-                        if not pr.get("has_grok_45"):
-                            result["ok"] = False
-                            result["error"] = "token ok but grok-4.5 not listed"
-                        if probe_chat and pr.get("has_grok_45"):
-                            ch = probe_mini_response(
-                                access, base_url=base_url, proxy=resolved or None
-                            )
-                            result["probe_chat"] = ch
-                            log(
-                                "probe chat: ok="
-                                + str(ch.get("ok"))
-                                + " model="
-                                + str(ch.get("model"))
-                                + " text="
-                                + repr(ch.get("text"))
-                            )
-                            if not ch.get("ok"):
-                                result["ok"] = False
-                                result["error"] = (
-                                    "chat probe failed: "
-                                    + str(ch.get("error") or ch.get("status"))
-                                )
                     else:
                         log("probe skip: access_token not found in CPA file")
                 except Exception as e:  # noqa: BLE001
@@ -242,34 +278,13 @@ def mint_and_export(
         pr = probe_models(
             tokens["access_token"], base_url=base_url, proxy=resolved or None
         )
-        result["probe_models"] = pr
-        log(
-            "probe models: ok="
-            + str(pr.get("ok"))
-            + " has_grok_45="
-            + str(pr.get("has_grok_45"))
-            + " ids="
-            + str(pr.get("model_ids"))
+        _apply_models_probe(
+            result,
+            pr,
+            log=log,
+            access=tokens["access_token"],
+            base_url=base_url,
+            proxy=resolved or None,
+            probe_chat=probe_chat,
         )
-        if not pr.get("has_grok_45"):
-            result["ok"] = False
-            result["error"] = "token ok but grok-4.5 not listed"
-        if probe_chat and pr.get("has_grok_45"):
-            ch = probe_mini_response(
-                tokens["access_token"], base_url=base_url, proxy=resolved or None
-            )
-            result["probe_chat"] = ch
-            log(
-                "probe chat: ok="
-                + str(ch.get("ok"))
-                + " model="
-                + str(ch.get("model"))
-                + " text="
-                + repr(ch.get("text"))
-            )
-            if not ch.get("ok"):
-                result["ok"] = False
-                result["error"] = (
-                    "chat probe failed: " + str(ch.get("error") or ch.get("status"))
-                )
     return result

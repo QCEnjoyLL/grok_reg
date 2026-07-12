@@ -813,7 +813,22 @@ class _AuthenticatedProxyBridge(socketserver.ThreadingMixIn, socketserver.TCPSer
 
 
 class _AuthenticatedProxyHandler(socketserver.BaseRequestHandler):
+    # Peer resets / half-close are normal for browser proxy tunnels.
+    _TUNNEL_SOFT_ERRORS = (
+        ConnectionResetError,
+        BrokenPipeError,
+        ConnectionAbortedError,
+        TimeoutError,
+        OSError,
+    )
+
     def handle(self):
+        try:
+            self._handle_tunnel()
+        except self._TUNNEL_SOFT_ERRORS:
+            return
+
+    def _handle_tunnel(self):
         client = self.request
         client.settimeout(20)
         initial = b""
@@ -843,13 +858,22 @@ class _AuthenticatedProxyHandler(socketserver.BaseRequestHandler):
                 if exceptional or not readable:
                     return
                 for source in readable:
-                    data = source.recv(65536)
+                    try:
+                        data = source.recv(65536)
+                    except self._TUNNEL_SOFT_ERRORS:
+                        return
                     if not data:
                         return
                     target = upstream if source is client else client
-                    target.sendall(data)
+                    try:
+                        target.sendall(data)
+                    except self._TUNNEL_SOFT_ERRORS:
+                        return
         finally:
-            upstream.close()
+            try:
+                upstream.close()
+            except Exception:
+                pass
 
 
 def _cleanup_proxy_bridges():
