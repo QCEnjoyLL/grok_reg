@@ -299,6 +299,75 @@ class JobManager:
 
 
 jobs = JobManager()
+
+_pending_lock = threading.Lock()
+_pending_job: dict[str, Any] | None = None
+
+
+def enqueue_job_request(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Start a job; return quickly even if process spawn is slow."""
+    action = (action or "start").strip().lower()
+    payload = dict(payload or {})
+
+    # stop is cheap and should be sync
+    if action in ("stop", "job_stop"):
+        return _handle_task_action(action, payload)
+
+    result: dict[str, Any] = {"ok": False}
+    err: list[Exception] = []
+
+    def _run() -> None:
+        try:
+            result.update(_handle_task_action(action, payload))
+            result["ok"] = True
+        except Exception as exc:  # noqa: BLE001
+            err.append(exc)
+            try:
+                jobs.append_log(f"[job] enqueue error: {exc}")
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_run, daemon=True, name="job-enqueue")
+    t.start()
+    t.join(timeout=2.5)
+    if err:
+        e = err[0]
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(500, str(e))
+    if t.is_alive():
+        return {"ok": True, "queued": True, "job": jobs.status(), "action": action}
+    if result.get("ok"):
+        return result
+    return {"ok": True, "job": jobs.status(), "action": action}
+
+
+def _pending_job_worker() -> None:
+    """Pick up pending_job.json written by external tools / partial clients."""
+    while True:
+        try:
+            drop = DATA_DIR / "pending_job.json"
+            if drop.is_file() and not jobs.is_running():
+                try:
+                    data = json.loads(drop.read_text(encoding="utf-8"))
+                except Exception:
+                    data = None
+                if isinstance(data, dict) and data.get("action"):
+                    try:
+                        _handle_task_action(str(data.get("action")), dict(data.get("payload") or {}))
+                    except Exception as exc:
+                        jobs.append_log(f"[job] pending worker: {exc}")
+                    try:
+                        drop.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        threading.Event().wait(1.0)
+
+
+threading.Thread(target=_pending_job_worker, daemon=True, name="pending-job-worker").start()
+
 app = FastAPI(title=DASHBOARD_TITLE, version="1.1.0")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 init_runtime_token()
@@ -859,7 +928,7 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
             payload = dict(cmd_payload)
         else:
             raise HTTPException(400, "invalid _cmd payload")
-        job_result = _handle_task_action(action, payload)
+        job_result = enqueue_job_request(action, payload)
         out["job_result"] = job_result
         out["job"] = job_result.get("job")
         out["cmd"] = action
@@ -913,7 +982,7 @@ def api_task(body: TaskBody, request: Request):
     require_auth(request)
     payload = body.model_dump()
     action = payload.pop("action", "start")
-    return _handle_task_action(action, payload)
+    return enqueue_job_request(action, payload)
 
 
 @app.post("/api/jobs/start")
@@ -1000,7 +1069,7 @@ def api_go(
         "probe": bool(probe),
         "headless": bool(headless),
     }
-    return _handle_task_action(action, payload)
+    return enqueue_job_request(action, payload)
 
 
 @app.get("/api/status/do")
@@ -1014,7 +1083,7 @@ def api_status_do(
 ):
     """Alias under /api/status/* — often allowed when other paths are filtered."""
     require_auth(request)
-    return _handle_task_action(
+    return enqueue_job_request(
         action,
         {
             "extra": extra,

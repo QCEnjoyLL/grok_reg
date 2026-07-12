@@ -17,20 +17,28 @@
     return u.pathname + u.search;
   }
   async function api(path, opts = {}) {
+    const timeoutMs = (opts && opts.timeoutMs) || 10000;
+    const { timeoutMs: _omit, ...fetchOpts } = opts || {};
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res;
     try {
       res = await fetch(path, {
-        ...opts,
-        headers: { ...authHeaders(!(opts.body instanceof FormData)), ...(opts.headers || {}) },
+        ...fetchOpts,
+        headers: { ...authHeaders(!(fetchOpts.body instanceof FormData)), ...(fetchOpts.headers || {}) },
         credentials: "same-origin",
+        signal: ctrl.signal,
       });
     } catch (netErr) {
-      const m = String((netErr && netErr.message) || netErr || "network error");
-      throw new Error(m + " @ " + path + " (网络中断/广告拦截/反代超时，可试 /api/jobs/start)");
+      clearTimeout(timer);
+      const name = (netErr && netErr.name) || "";
+      const m = name === "AbortError" ? ("timeout " + timeoutMs + "ms") : String((netErr && netErr.message) || netErr || "network error");
+      throw new Error(m + " @ " + path);
     }
+    clearTimeout(timer);
     if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
+    if (!res.ok) throw new Error((data.detail || data.message || res.statusText) + " @ " + path);
     return data;
   }
   function ensureToastHost() {
@@ -282,9 +290,91 @@
     });
   }
 
+  function ensureJobFrame() {
+    let f = document.getElementById("job-frame");
+    if (!f) {
+      f = document.createElement("iframe");
+      f.id = "job-frame";
+      f.name = "job-frame";
+      f.style.cssText = "position:absolute;width:0;height:0;border:0;left:-9999px;top:-9999px;";
+      document.body.appendChild(f);
+    }
+    return f;
+  }
+
+  function startViaHiddenGet(params) {
+    return new Promise((resolve, reject) => {
+      ensureJobFrame();
+      const q = new URLSearchParams(params);
+      const t = getToken();
+      if (t) q.set("token", t);
+      // prefer status/do then go
+      const urls = [
+        "/api/status/do?" + q.toString(),
+        "/api/go?" + q.toString(),
+      ];
+      let i = 0;
+      const tryNext = () => {
+        if (i >= urls.length) {
+          reject(new Error("iframe GET failed"));
+          return;
+        }
+        const url = urls[i++];
+        toast("[ui] iframe GET " + url.split("?")[0] + " ...");
+        const form = document.createElement("form");
+        form.method = "GET";
+        form.action = url.split("?")[0];
+        form.target = "job-frame";
+        form.style.display = "none";
+        const qs = new URLSearchParams(url.split("?")[1] || "");
+        qs.forEach((v, k) => {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = k;
+          input.value = v;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+        // poll status after short delay
+        let tries = 0;
+        const poll = async () => {
+          tries += 1;
+          try {
+            const st = await api("/api/status", { timeoutMs: 5000 });
+            if (st && st.job && st.job.running) {
+              resolve({ ok: true, job: st.job, via: "iframe-get" });
+              return;
+            }
+          } catch (_) {}
+          if (tries >= 6) {
+            tryNext();
+            return;
+          }
+          setTimeout(poll, 700);
+        };
+        setTimeout(poll, 600);
+      };
+      tryNext();
+    });
+  }
+
   function isNetErr(err) {
     const m = String((err && err.message) || err || "").toLowerCase();
-    return m.includes("failed to fetch") || m.includes("network") || m.includes("websocket") || m.includes("timeout") || m.includes("load failed");
+    return (
+      m.includes("failed to fetch") ||
+      m.includes("network") ||
+      m.includes("websocket") ||
+      m.includes("timeout") ||
+      m.includes("abort") ||
+      m.includes("load failed") ||
+      m.includes("404") ||
+      m.includes("not found") ||
+      m.includes("502") ||
+      m.includes("503") ||
+      m.includes("504")
+    );
   }
 
   async function startJob(body) {
@@ -292,86 +382,120 @@
     const threads = Number(body.threads || 1);
     const mint_workers = Number(body.mint_workers ?? -1);
     const fast = body.fast !== false;
+    const payload = { action: "start", extra, threads, mint_workers, fast };
+    const errors = [];
 
-    // Channel A: GET /api/go - GET works in server logs
-    try {
-      toast("[ui] starting via GET /api/go ...");
-      const q = new URLSearchParams({
-        action: "start",
-        extra: String(extra),
-        threads: String(threads),
-        mint_workers: String(mint_workers),
-        fast: fast ? "1" : "0",
-      });
-      return await api("/api/go?" + q.toString());
-    } catch (eA) {
-      if (!isNetErr(eA)) throw eA;
+    async function tryChannel(name, fn, requireJob = true) {
+      toast("[ui] " + name + " ...");
+      try {
+        const res = await fn();
+        if (!res) {
+          errors.push(name + ": empty response");
+          return null;
+        }
+        const hasJob = !!(res.job || res.job_result || res.queued || res.cmd || (res.job && res.job.pid));
+        if (requireJob && !hasJob && res.ok) {
+          // e.g. old image accepted PUT /api/config but ignored _cmd
+          errors.push(name + ": no job in response");
+          toast("[ui] " + name + " no job field, try next", "err");
+          return null;
+        }
+        if (res.ok || hasJob) return res.job_result || res;
+        errors.push(name + ": unexpected response");
+        return null;
+      } catch (err) {
+        const msg = String(err.message || err);
+        errors.push(name + ": " + msg);
+        toast("[ui] " + name + " failed: " + msg, "err");
+        return null;
+      }
     }
 
-    // Channel B: GET /api/status/do
-    try {
-      toast("[ui] trying GET /api/status/do ...");
-      const q = new URLSearchParams({
-        action: "start",
-        extra: String(extra),
-        threads: String(threads),
-        mint_workers: String(mint_workers),
-        fast: fast ? "1" : "0",
-      });
-      return await api("/api/status/do?" + q.toString());
-    } catch (eB) {
-      if (!isNetErr(eB)) throw eB;
-    }
-
-    // Channel C: PUT /api/config with _cmd (your config saves already work)
-    try {
-      toast("[ui] trying PUT /api/config _cmd ...");
-      const res = await api("/api/config", {
+    // 1) PUT /api/config + _cmd (known-good path)
+    let res = await tryChannel("PUT /api/config _cmd", () =>
+      api("/api/config", {
         method: "PUT",
-        body: JSON.stringify({
-          config: {
-            _cmd: { action: "start", extra, threads, mint_workers, fast },
-          },
-        }),
-      });
-      if (res.job || res.job_result) return res.job_result || res;
-      return res;
-    } catch (eC) {
-      if (!isNetErr(eC)) throw eC;
-    }
+        timeoutMs: 12000,
+        body: JSON.stringify({ config: { _cmd: payload } }),
+      })
+    );
+    if (res) return res;
 
-    // Channel D: WebSocket
-    try {
-      toast("[ui] trying websocket ...");
-      return await wsSend("start", { extra, threads, mint_workers, fast });
-    } catch (eD) {
-      // Channel E: legacy
-      toast("[ui] trying POST /api/jobs/start ...");
-      return await api("/api/jobs/start", {
-        method: "POST",
-        body: JSON.stringify({ extra, threads, mint_workers, fast }),
+    // 2) GET /api/status  (probe) then GET /api/status/do
+    res = await tryChannel("GET /api/status/do", () => {
+      const q = new URLSearchParams({
+        action: "start",
+        extra: String(extra),
+        threads: String(threads),
+        mint_workers: String(mint_workers),
+        fast: fast ? "1" : "0",
       });
-    }
+      return api("/api/status/do?" + q.toString(), { timeoutMs: 8000 });
+    });
+    if (res) return res;
+
+    // 3) GET /api/go
+    res = await tryChannel("GET /api/go", () => {
+      const q = new URLSearchParams({
+        action: "start",
+        extra: String(extra),
+        threads: String(threads),
+        mint_workers: String(mint_workers),
+        fast: fast ? "1" : "0",
+      });
+      return api("/api/go?" + q.toString(), { timeoutMs: 8000 });
+    });
+    if (res) return res;
+
+    // 4) PUT /api/task
+    res = await tryChannel("PUT /api/task", () =>
+      api("/api/task", {
+        method: "PUT",
+        timeoutMs: 8000,
+        body: JSON.stringify(payload),
+      })
+    );
+    if (res) return res;
+
+    // 5) WebSocket
+    res = await tryChannel("WebSocket start", () => wsSend("start", payload, 8000));
+    if (res) return res;
+
+    // 6) legacy POST
+    res = await tryChannel("POST /api/jobs/start", () =>
+      api("/api/jobs/start", {
+        method: "POST",
+        timeoutMs: 8000,
+        body: JSON.stringify({ extra, threads, mint_workers, fast }),
+      })
+    );
+    if (res) return res;
+
+    throw new Error("all start channels failed: " + errors.join(" | "));
   }
 
   async function stopJob() {
-    try {
-      return await api("/api/go?action=stop");
-    } catch (e1) {
-      if (!isNetErr(e1)) throw e1;
-      try {
-        return await api("/api/config", {
+    const errors = [];
+    const channels = [
+      ["PUT /api/config _cmd", () =>
+        api("/api/config", {
           method: "PUT",
+          timeoutMs: 8000,
           body: JSON.stringify({ config: { _cmd: { action: "stop" } } }),
-        });
-      } catch (e2) {
-        if (!isNetErr(e2)) throw e2;
-        try { return await wsSend("stop", {}); }
-        catch (e3) {
-          return await api("/api/jobs/stop", { method: "POST", body: "{}" });
-        }
+        })],
+      ["GET /api/go?action=stop", () => api("/api/go?action=stop", { timeoutMs: 8000 })],
+      ["WebSocket stop", () => wsSend("stop", {}, 5000)],
+      ["POST /api/jobs/stop", () => api("/api/jobs/stop", { method: "POST", body: "{}", timeoutMs: 8000 })],
+    ];
+    for (const [name, fn] of channels) {
+      try {
+        toast("[ui] stop via " + name);
+        return await fn();
+      } catch (err) {
+        errors.push(name + ": " + (err.message || err));
       }
     }
+    throw new Error("stop failed: " + errors.join(" | "));
   }
 
   document.getElementById("form-register").addEventListener("submit", async (e) => {
