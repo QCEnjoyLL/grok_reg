@@ -215,26 +215,25 @@
         </form>
       </div>
 
-      <div class="card">
-        <details class="advanced fold-card" id="backfill-box">
-          <summary class="summary-left">补认证 Backfill（高级选项，一般用上面的「生成 CPA」按钮即可）</summary>
-          <form id="form-backfill" class="form">
-            <label>limit (0=全部缺失)
-              <input type="number" name="limit" value="1" min="0" max="5000" />
-            </label>
-            <label>指定邮箱（可选）
-              <input type="text" name="email" placeholder="user@domain" />
-            </label>
-            <label>timeout 秒
-              <input type="number" name="timeout" value="300" min="30" />
-            </label>
-            <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
-            <label class="check"><input type="checkbox" name="headless" /> headless (不推荐)</label>
-            <div class="row">
-              <button type="submit" class="btn primary">开始 Backfill</button>
-            </div>
-          </form>
-        </details>
+      <div class="card" id="backfill-box">
+        <h2>补认证 Backfill</h2>
+        <p class="hint">一般用下方「为缺失账号生成 CPA」即可；这里可指定 limit / 邮箱 / timeout。</p>
+        <form id="form-backfill" class="form">
+          <label>limit (0=全部缺失)
+            <input type="number" name="limit" value="1" min="0" max="5000" />
+          </label>
+          <label>指定邮箱（可选）
+            <input type="text" name="email" placeholder="user@domain" />
+          </label>
+          <label>timeout 秒
+            <input type="number" name="timeout" value="300" min="30" />
+          </label>
+          <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
+          <label class="check"><input type="checkbox" name="headless" /> headless (不推荐)</label>
+          <div class="row">
+            <button type="submit" class="btn primary">开始 Backfill</button>
+          </div>
+        </form>
       </div>
 
       <div class="card wide">
