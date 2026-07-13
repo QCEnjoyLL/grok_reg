@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
     "cloudflare_api_key": "",
     "cloudflare_auth_mode": "x-admin-auth",
     "cloudflare_path_domains": "/api/domains",
-    "cloudflare_path_accounts": "/admin/new_address",
+    "cloudflare_path_accounts": "/api/new_address",
     "cloudflare_path_token": "/api/token",
     "cloudflare_path_messages": "/api/mails",
     "proxy": "http://127.0.0.1:7890",
@@ -610,17 +610,17 @@ def cloudflare_create_temp_address(api_base):
     """适配 cloudflare_temp_email: POST new_address -> {address,jwt}."""
     global _cf_domain_index
     api_base = str(api_base or "").rstrip("/")
-    configured = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
-    # 405/404 时自动尝试常见路径（不同部署/反代前缀不一致）
+    configured = get_cloudflare_path("cloudflare_path_accounts", "/api/new_address")
+    # public /api/new_address 通常无需 admin；admin 路径需要 x-admin-auth
     path_candidates = []
     for p in (
         configured,
-        "/admin/new_address",
         "/api/new_address",
+        "/admin/new_address",
         "/admin/api/new_address",
         "/api/admin/new_address",
     ):
-        p = str(p or "").strip() or "/admin/new_address"
+        p = str(p or "").strip() or "/api/new_address"
         if not p.startswith("/"):
             p = "/" + p
         if p not in path_candidates:
@@ -638,16 +638,16 @@ def cloudflare_create_temp_address(api_base):
     name = generate_username(10)
 
     errors = []
+    saw_spa_like = False
     for path in path_candidates:
         payload = {"name": name}
         if domain:
             payload["domain"] = domain
-        # admin 接口通常需要 domain；无 domain 时只尝试 public /api/new_address
-        if path.startswith("/admin") and not domain:
+        if path.startswith("/admin") and not domain and get_cloudflare_api_key():
+            # admin 创建通常要 domain；没配域名时跳过 admin 路径
             errors.append(f"{path}: 缺少 defaultDomains")
             continue
 
-        # 临时邮箱 API 优先直连，避免注册代理把响应变成 HTML/空 body
         for use_proxy in (False, True):
             mode = "proxy" if use_proxy else "direct"
             try:
@@ -660,13 +660,29 @@ def cloudflare_create_temp_address(api_base):
                 if not use_proxy:
                     kwargs["proxies"] = {}
                 resp = http_post(f"{api_base}{path}", **kwargs)
+                ct = ""
+                try:
+                    ct = str((resp.headers or {}).get("content-type") or "").lower()
+                except Exception:
+                    ct = ""
                 snippet = _cloudflare_response_snippet(resp)
+                body = ""
+                try:
+                    body = (resp.text or "").lstrip()
+                except Exception:
+                    body = ""
+                if "text/html" in ct or body.startswith("<!DOCTYPE") or body.startswith("<html"):
+                    saw_spa_like = True
+                    errors.append(f"{path}[{mode}] 返回前端 HTML（不是 Worker API） {snippet}")
+                    break
                 if resp.status_code in (404, 405):
+                    # Pages/SPA 反代常见：POST 一律 405 空 body
+                    if resp.status_code == 405 and not body:
+                        saw_spa_like = True
                     errors.append(f"{path}[{mode}] {snippet}")
-                    break  # try next path
+                    break
                 if resp.status_code >= 400:
                     errors.append(f"{path}[{mode}] {snippet}")
-                    # 鉴权类错误换 path 通常无用，但仍可试 public path
                     if resp.status_code in (401, 403) and path.startswith("/admin"):
                         break
                     if use_proxy:
@@ -694,9 +710,16 @@ def cloudflare_create_temp_address(api_base):
                     break
                 continue
     detail = "; ".join(errors[:8]) if errors else "unknown"
+    hint = ""
+    if saw_spa_like:
+        hint = (
+            " 看起来 cloudflare_api_base 填成了前端页面域名（Pages/SPA），"
+            "请改成 Worker API 地址（例如 https://xxx.workers.dev；"
+            "可在前端打包 JS 里搜 workers.dev，或 Cloudflare 控制台 Worker 域名）。"
+        )
     raise Exception(
         "Cloudflare 创建邮箱失败（已尝试多路径）。"
-        f"请确认 cloudflare_api_base / 管理密钥 / 鉴权方式 / 域名。详情: {detail}"
+        f"请确认 cloudflare_api_base / 管理密钥 / 鉴权方式 / 域名。{hint}详情: {detail}"
     )
 
 

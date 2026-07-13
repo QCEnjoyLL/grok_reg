@@ -142,7 +142,7 @@
   }
   const MAIL_HINTS = {
     moemail: "MoeMail：填密钥和接口地址；域名可选。",
-    cloudflare: "临时邮箱：填接口地址、管理密钥/密码、域名；路径一般不用改。",
+    cloudflare: "临时邮箱：接口地址填 Worker（xxx.workers.dev），不要填前端 Pages 域名；公开创建通常路径 /api/new_address，域名可选。",
     cloudmail: "CloudMail：填管理端地址、管理员邮箱与密码；域名写在邮箱域名。",
     duckmail: "DuckMail：填密钥即可。",
     yyds: "YYDS：填密钥和/或 JWT。",
@@ -182,7 +182,7 @@
     setVal("q-cloudflare_api_base", cfg.cloudflare_api_base || "");
     setVal("q-cloudflare_api_key", cfg.cloudflare_api_key || "");
     setVal("q-cloudflare_auth_mode", cfg.cloudflare_auth_mode || "x-admin-auth");
-    setVal("q-cloudflare_path_accounts", cfg.cloudflare_path_accounts || "/admin/new_address");
+    setVal("q-cloudflare_path_accounts", cfg.cloudflare_path_accounts || "/api/new_address");
     setVal("q-cloudflare_path_messages", cfg.cloudflare_path_messages || "/api/mails");
     setVal("q-cloudflare_path_domains", cfg.cloudflare_path_domains || "/api/domains");
     setVal("q-cloudflare_path_token", cfg.cloudflare_path_token || "/api/token");
@@ -211,7 +211,7 @@
       defaultDomains: getVal("q-defaultDomains"),
       cloudflare_api_base: getVal("q-cloudflare_api_base"),
       cloudflare_auth_mode: getVal("q-cloudflare_auth_mode") || "x-admin-auth",
-      cloudflare_path_accounts: getVal("q-cloudflare_path_accounts") || "/admin/new_address",
+      cloudflare_path_accounts: getVal("q-cloudflare_path_accounts") || "/api/new_address",
       cloudflare_path_messages: getVal("q-cloudflare_path_messages") || "/api/mails",
       cloudflare_path_domains: getVal("q-cloudflare_path_domains") || "/api/domains",
       cloudflare_path_token: getVal("q-cloudflare_path_token") || "/api/token",

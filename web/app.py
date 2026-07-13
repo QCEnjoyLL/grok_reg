@@ -695,12 +695,16 @@ def _setup_hints(cfg: dict[str, Any]) -> list[str]:
         if _is_placeholder(base):
             hints.append('还差 MoeMail API 地址 moemail_api_base')
     elif provider == "cloudflare":
-        base = str(cfg.get("cloudflare_api_base") or "")
+        base = str(cfg.get("cloudflare_api_base") or "").strip()
         if _is_placeholder(base):
-            hints.append('还差第1项：临时邮箱 Worker 地址 cloudflare_api_base')
+            hints.append('还差第1项：临时邮箱 Worker 地址 cloudflare_api_base（填 workers.dev，不要填前端 Pages 域名）')
+        elif base and ("workers.dev" not in base.lower()) and not base.lower().endswith(("/api", "/admin")):
+            # Pages/自定义前端域名很常见被误填；提醒用户改成 Worker API
+            hints.append('cloudflare_api_base 建议填 Worker API（*.workers.dev），不要填前端页面域名')
         domains = str(cfg.get("defaultDomains") or "")
-        if _is_placeholder(domains) or domains in ("example.com", "xx.shop"):
-            hints.append('还差第2项：真实邮箱域名 defaultDomains')
+        # /api/new_address 可不带 domain；有 domain 更稳
+        if domains and (_is_placeholder(domains) or domains in ("example.com", "xx.shop")):
+            hints.append('defaultDomains 请填真实邮箱域名')
     elif provider == "cloudmail":
         if _is_placeholder(str(cfg.get("cloudmail_url") or "")):
             hints.append('还差 CloudMail 地址 cloudmail_url')
