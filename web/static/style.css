@@ -436,3 +436,6 @@ label .field-key + select {
 .grid > .card:not(.wide) > .hint {
   flex: 0 0 auto;
 }
+
+/* provider-specific config fields */
+[data-mail][hidden] { display: none !important; }

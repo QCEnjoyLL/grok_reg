@@ -926,6 +926,7 @@ def api_config_get(request: Request, redact: bool = True):
         return {"path": str(path), "config": {}}
     secret_keys = {
         "cloudmail_password",
+        "moemail_api_key",
         "cloudflare_api_key",
         "duckmail_api_key",
         "yyds_api_key",
@@ -963,6 +964,7 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
             existing = {}
     secret_keys = {
         "cloudmail_password",
+        "moemail_api_key",
         "cloudflare_api_key",
         "duckmail_api_key",
         "yyds_api_key",

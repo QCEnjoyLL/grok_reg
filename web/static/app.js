@@ -140,6 +140,39 @@
     const el = document.getElementById(id);
     return el ? String(el.value || "").trim() : "";
   }
+  const MAIL_HINTS = {
+    moemail: "MoeMail：填 API Key、API 地址；域名可选。",
+    cloudflare: "cloudflare_temp_email：填 API Base、Admin Key/密码、域名；路径一般不用改。",
+    cloudmail: "CloudMail：填管理端 URL、管理员邮箱与密码；域名写在 defaultDomains。",
+    duckmail: "DuckMail：填 API Key 即可。",
+    yyds: "YYDS：填 API Key 和/或 JWT。",
+  };
+  function syncMailProviderFields() {
+    const provider = (getVal("q-email_provider") || "moemail").toLowerCase();
+    document.querySelectorAll("[data-mail]").forEach((el) => {
+      const raw = String(el.getAttribute("data-mail") || "");
+      const list = raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const show = list.includes(provider);
+      el.hidden = !show;
+      if (el.tagName === "DETAILS" && !show) el.open = false;
+    });
+    const hint = document.getElementById("quick-mail-hint");
+    if (hint) hint.textContent = MAIL_HINTS[provider] || "选择邮箱渠道后，下方只显示该渠道需要的配置项。";
+    const domainTitle = document.getElementById("defaultDomains-title");
+    const input = document.getElementById("q-defaultDomains");
+    if (domainTitle) {
+      if (provider === "cloudflare" || provider === "cloudmail") {
+        domainTitle.textContent = "邮箱域名（必填）";
+      } else {
+        domainTitle.textContent = "邮箱域名（可选）";
+      }
+    }
+    if (input) {
+      if (provider === "cloudflare") input.placeholder = "lxk.dpdns.org";
+      else if (provider === "cloudmail") input.placeholder = "mail.example.com";
+      else input.placeholder = "moemail.app";
+    }
+  }
   function fillQuickFromConfig(cfg) {
     if (!cfg) return;
     setVal("q-email_provider", cfg.email_provider || "moemail");
@@ -165,6 +198,10 @@
     setVal("q-cloudmail_url", cfg.cloudmail_url || "");
     setVal("q-cloudmail_admin_email", cfg.cloudmail_admin_email || "");
     setVal("q-cloudmail_password", cfg.cloudmail_password || "");
+    setVal("q-duckmail_api_key", cfg.duckmail_api_key || "");
+    setVal("q-yyds_api_key", cfg.yyds_api_key || "");
+    setVal("q-yyds_jwt", cfg.yyds_jwt || "");
+    syncMailProviderFields();
   }
   function collectQuickConfig() {
     const bool = (v) => v === "true" || v === true;
@@ -193,6 +230,12 @@
     if (key && !key.includes("*")) out.cloudflare_api_key = key;
     const mkey = getVal("q-moemail_api_key");
     if (mkey && !mkey.includes("*")) out.moemail_api_key = mkey;
+    const dkey = getVal("q-duckmail_api_key");
+    if (dkey && !dkey.includes("*")) out.duckmail_api_key = dkey;
+    const ykey = getVal("q-yyds_api_key");
+    if (ykey && !ykey.includes("*")) out.yyds_api_key = ykey;
+    const yjwt = getVal("q-yyds_jwt");
+    if (yjwt && !yjwt.includes("*")) out.yyds_jwt = yjwt;
     const cpaKey = getVal("q-cpa_management_key");
     if (cpaKey && !cpaKey.includes("*")) out.cpa_management_key = cpaKey;
     const cmp = getVal("q-cloudmail_password");
@@ -829,6 +872,11 @@
       await refreshStatus();
     } catch (err) { toastSave("CPA " + __S.save_fail + ": " + (err.message || err), false); }
   });
+
+  document.getElementById("q-email_provider")?.addEventListener("change", () => {
+    syncMailProviderFields();
+  });
+  syncMailProviderFields();
 
   document.getElementById("btn-save-quick").addEventListener("click", async () => {
     try {
