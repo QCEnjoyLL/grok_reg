@@ -837,6 +837,29 @@
     } catch (err) { toast(String(err.message || err)); }
   });
 
+  document.getElementById("btn-copy-log")?.addEventListener("click", async () => {
+    const el = document.getElementById("log");
+    const text = el ? String(el.textContent || "") : "";
+    if (!text.trim()) { toast("日志为空"); return; }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      toast("日志已复制");
+    } catch (err) {
+      toast("复制失败: " + (err.message || err));
+    }
+  });
+
   document.getElementById("btn-clear-log").addEventListener("click", () => {
     document.getElementById("log").textContent = "";
   });

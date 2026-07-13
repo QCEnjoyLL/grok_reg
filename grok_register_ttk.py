@@ -609,56 +609,95 @@ def _cloudflare_response_snippet(resp, limit=240):
 def cloudflare_create_temp_address(api_base):
     """适配 cloudflare_temp_email: POST new_address -> {address,jwt}."""
     global _cf_domain_index
-    path = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
-    url = f"{api_base.rstrip('/')}{path}"
-    payload = {}
+    api_base = str(api_base or "").rstrip("/")
+    configured = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
+    # 405/404 时自动尝试常见路径（不同部署/反代前缀不一致）
+    path_candidates = []
+    for p in (
+        configured,
+        "/admin/new_address",
+        "/api/new_address",
+        "/admin/api/new_address",
+        "/api/admin/new_address",
+    ):
+        p = str(p or "").strip() or "/admin/new_address"
+        if not p.startswith("/"):
+            p = "/" + p
+        if p not in path_candidates:
+            path_candidates.append(p)
+
     domains = [
         x.strip()
         for x in re.split(r"[,，\s]+", str(config.get("defaultDomains", "") or ""))
         if x.strip()
     ]
+    domain = ""
     if domains:
-        payload["domain"] = domains[_cf_domain_index % len(domains)]
+        domain = domains[_cf_domain_index % len(domains)]
         _cf_domain_index += 1
-    # admin / public 创建都尽量带 name，兼容不同版本 cloudflare_temp_email
-    payload["name"] = generate_username(10)
-    if path.startswith("/admin/") and not payload.get("domain"):
-        raise Exception("Cloudflare 管理员创建邮箱需要在 defaultDomains 中配置可用域名")
+    name = generate_username(10)
 
-    # 临时邮箱 API 走直连，避免注册代理把 Worker/鉴权页变成 HTML
-    last_err = None
-    for use_proxy in (False, True):
-        try:
-            kwargs = {
-                "json": payload,
-                "headers": cloudflare_build_headers(content_type=True),
-                "params": cloudflare_apply_auth_params(),
-                "timeout": 20,
-            }
-            if not use_proxy:
-                kwargs["proxies"] = {}
-            resp = http_post(url, **kwargs)
-            snippet = _cloudflare_response_snippet(resp)
-            if resp.status_code >= 400:
-                raise Exception(f"创建邮箱 HTTP 失败 path={path} {snippet}")
-            try:
-                data = resp.json()
-            except Exception:
-                raise Exception(f"创建邮箱返回非JSON path={path} {snippet}")
-            if not isinstance(data, dict):
-                raise Exception(f"创建邮箱返回格式错误 path={path} data={data!r}")
-            address = data.get("address") or data.get("email")
-            jwt = data.get("jwt") or data.get("token")
-            if not address or not jwt:
-                raise Exception(f"创建邮箱缺少 address/jwt path={path} data={data}")
-            return address, jwt
-        except Exception as exc:
-            last_err = exc
-            # 直连失败再试一次走代理；代理失败则抛出
-            if use_proxy:
-                break
+    errors = []
+    for path in path_candidates:
+        payload = {"name": name}
+        if domain:
+            payload["domain"] = domain
+        # admin 接口通常需要 domain；无 domain 时只尝试 public /api/new_address
+        if path.startswith("/admin") and not domain:
+            errors.append(f"{path}: 缺少 defaultDomains")
             continue
-    raise Exception(f"Cloudflare 创建邮箱失败: {last_err}")
+
+        # 临时邮箱 API 优先直连，避免注册代理把响应变成 HTML/空 body
+        for use_proxy in (False, True):
+            mode = "proxy" if use_proxy else "direct"
+            try:
+                kwargs = {
+                    "json": payload,
+                    "headers": cloudflare_build_headers(content_type=True),
+                    "params": cloudflare_apply_auth_params(),
+                    "timeout": 20,
+                }
+                if not use_proxy:
+                    kwargs["proxies"] = {}
+                resp = http_post(f"{api_base}{path}", **kwargs)
+                snippet = _cloudflare_response_snippet(resp)
+                if resp.status_code in (404, 405):
+                    errors.append(f"{path}[{mode}] {snippet}")
+                    break  # try next path
+                if resp.status_code >= 400:
+                    errors.append(f"{path}[{mode}] {snippet}")
+                    # 鉴权类错误换 path 通常无用，但仍可试 public path
+                    if resp.status_code in (401, 403) and path.startswith("/admin"):
+                        break
+                    if use_proxy:
+                        break
+                    continue
+                try:
+                    data = resp.json()
+                except Exception:
+                    errors.append(f"{path}[{mode}] 非JSON {snippet}")
+                    if use_proxy:
+                        break
+                    continue
+                if not isinstance(data, dict):
+                    errors.append(f"{path}[{mode}] 格式错误 data={data!r}")
+                    break
+                address = data.get("address") or data.get("email")
+                jwt = data.get("jwt") or data.get("token")
+                if not address or not jwt:
+                    errors.append(f"{path}[{mode}] 缺少 address/jwt data={data}")
+                    break
+                return address, jwt
+            except Exception as exc:
+                errors.append(f"{path}[{mode}] {exc}")
+                if use_proxy:
+                    break
+                continue
+    detail = "; ".join(errors[:8]) if errors else "unknown"
+    raise Exception(
+        "Cloudflare 创建邮箱失败（已尝试多路径）。"
+        f"请确认 cloudflare_api_base / 管理密钥 / 鉴权方式 / 域名。详情: {detail}"
+    )
 
 
 def get_user_agent():
@@ -1992,7 +2031,7 @@ def get_email_and_token(api_key=None):
             path = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
             # 管理员 new_address 场景下，/domains 兜底几乎总是 HTML/空响应，直接抛清错误
             if path.startswith("/admin/") or path.endswith("/new_address"):
-                raise Exception(f"Cloudflare 创建邮箱失败: {primary_exc}") from primary_exc
+                raise Exception(str(primary_exc)) from primary_exc
             key = api_key or get_cloudflare_api_key()
             try:
                 domains = cloudflare_get_domains(api_base, api_key=key)
