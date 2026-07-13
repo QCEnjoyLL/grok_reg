@@ -36,11 +36,11 @@ DEFAULT_CONFIG = {
     "duckmail_api_key": "",
     "cloudflare_api_base": "",
     "cloudflare_api_key": "",
-    "cloudflare_auth_mode": "bearer",
-    "cloudflare_path_domains": "/domains",
-    "cloudflare_path_accounts": "/accounts",
-    "cloudflare_path_token": "/token",
-    "cloudflare_path_messages": "/messages",
+    "cloudflare_auth_mode": "x-admin-auth",
+    "cloudflare_path_domains": "/api/domains",
+    "cloudflare_path_accounts": "/admin/new_address",
+    "cloudflare_path_token": "/api/token",
+    "cloudflare_path_messages": "/api/mails",
     "proxy": "http://127.0.0.1:7890",
     "enable_nsfw": True,
     "register_count": 1,
@@ -595,40 +595,70 @@ def _pick_list_payload(data):
     return []
 
 
+def _cloudflare_response_snippet(resp, limit=240):
+    try:
+        text = (resp.text or "").strip()
+    except Exception:
+        text = ""
+    if not text:
+        return f"status={getattr(resp, 'status_code', '?')} empty body"
+    one_line = re.sub(r"\s+", " ", text)[:limit]
+    return f"status={getattr(resp, 'status_code', '?')} body={one_line}"
+
+
 def cloudflare_create_temp_address(api_base):
     """适配 cloudflare_temp_email: POST new_address -> {address,jwt}."""
     global _cf_domain_index
-    path = get_cloudflare_path("cloudflare_path_accounts", "/api/new_address")
-    url = f"{api_base}{path}"
+    path = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
+    url = f"{api_base.rstrip('/')}{path}"
     payload = {}
-    try:
-        # 在多个域名之间轮换，降低单域偶发不收件导致的失败率
-        domains = [x.strip() for x in re.split(r"[,，\s]+", str(config.get("defaultDomains", "") or "")) if x.strip()]
-        if domains:
-            payload["domain"] = domains[_cf_domain_index % len(domains)]
-            _cf_domain_index += 1
-            if path.startswith("/admin/"):
-                payload["name"] = generate_username(10)
-    except Exception:
-        pass
+    domains = [
+        x.strip()
+        for x in re.split(r"[,，\s]+", str(config.get("defaultDomains", "") or ""))
+        if x.strip()
+    ]
+    if domains:
+        payload["domain"] = domains[_cf_domain_index % len(domains)]
+        _cf_domain_index += 1
+    # admin / public 创建都尽量带 name，兼容不同版本 cloudflare_temp_email
+    payload["name"] = generate_username(10)
     if path.startswith("/admin/") and not payload.get("domain"):
         raise Exception("Cloudflare 管理员创建邮箱需要在 defaultDomains 中配置可用域名")
-    resp = http_post(
-        url,
-        json=payload,
-        headers=cloudflare_build_headers(content_type=True),
-        params=cloudflare_apply_auth_params(),
-    )
-    resp.raise_for_status()
-    try:
-        data = resp.json()
-    except Exception:
-        raise Exception(f"Cloudflare /api/new_address 返回非JSON: {resp.text[:300]}")
-    address = data.get("address")
-    jwt = data.get("jwt")
-    if not address or not jwt:
-        raise Exception(f"Cloudflare /api/new_address 缺少 address/jwt: {data}")
-    return address, jwt
+
+    # 临时邮箱 API 走直连，避免注册代理把 Worker/鉴权页变成 HTML
+    last_err = None
+    for use_proxy in (False, True):
+        try:
+            kwargs = {
+                "json": payload,
+                "headers": cloudflare_build_headers(content_type=True),
+                "params": cloudflare_apply_auth_params(),
+                "timeout": 20,
+            }
+            if not use_proxy:
+                kwargs["proxies"] = {}
+            resp = http_post(url, **kwargs)
+            snippet = _cloudflare_response_snippet(resp)
+            if resp.status_code >= 400:
+                raise Exception(f"创建邮箱 HTTP 失败 path={path} {snippet}")
+            try:
+                data = resp.json()
+            except Exception:
+                raise Exception(f"创建邮箱返回非JSON path={path} {snippet}")
+            if not isinstance(data, dict):
+                raise Exception(f"创建邮箱返回格式错误 path={path} data={data!r}")
+            address = data.get("address") or data.get("email")
+            jwt = data.get("jwt") or data.get("token")
+            if not address or not jwt:
+                raise Exception(f"创建邮箱缺少 address/jwt path={path} data={data}")
+            return address, jwt
+        except Exception as exc:
+            last_err = exc
+            # 直连失败再试一次走代理；代理失败则抛出
+            if use_proxy:
+                break
+            continue
+    raise Exception(f"Cloudflare 创建邮箱失败: {last_err}")
 
 
 def get_user_agent():
@@ -1094,9 +1124,31 @@ def cloudflare_get_domains(api_base, api_key=None):
         headers["X-API-Key"] = api_key
     path = get_cloudflare_path("cloudflare_path_domains", "/domains")
     params = cloudflare_apply_auth_params()
-    resp = http_get(f"{api_base}{path}", headers=headers, params=params)
-    resp.raise_for_status()
-    return _pick_list_payload(resp.json())
+        # 域名接口默认直连；代理仅作回退
+    last_err = None
+    for use_proxy in (False, True):
+        try:
+            kwargs = {"headers": headers, "params": params, "timeout": 20}
+            if not use_proxy:
+                kwargs["proxies"] = {}
+            resp = http_get(f"{api_base.rstrip('/')}{path}", **kwargs)
+            if resp.status_code >= 400:
+                raise Exception(
+                    f"域名接口 HTTP 失败 path={path} {_cloudflare_response_snippet(resp)}"
+                )
+            try:
+                data = resp.json()
+            except Exception:
+                raise Exception(
+                    f"域名接口返回非JSON path={path} {_cloudflare_response_snippet(resp)}"
+                )
+            return _pick_list_payload(data)
+        except Exception as exc:
+            last_err = exc
+            if use_proxy:
+                break
+            continue
+    raise Exception(f"Cloudflare 获取域名失败: {last_err}")
 
 
 def cloudflare_create_account(api_base, address, password, api_key=None, expires_in=0):
@@ -1933,17 +1985,27 @@ def get_email_and_token(api_key=None):
         api_base = get_cloudflare_api_base()
         if not api_base:
             raise Exception("Cloudflare API Base 未配置")
+        # cloudflare_temp_email 主路径；失败时仅在显式兼容路径下回退 Mail.tm 风格
         try:
-            # cloudflare_temp_email 专用模式
             return cloudflare_create_temp_address(api_base)
         except Exception as primary_exc:
-            # 兜底回退到 Mail.tm 风格
+            path = get_cloudflare_path("cloudflare_path_accounts", "/admin/new_address")
+            # 管理员 new_address 场景下，/domains 兜底几乎总是 HTML/空响应，直接抛清错误
+            if path.startswith("/admin/") or path.endswith("/new_address"):
+                raise Exception(f"Cloudflare 创建邮箱失败: {primary_exc}") from primary_exc
             key = api_key or get_cloudflare_api_key()
-            domains = cloudflare_get_domains(api_base, api_key=key)
+            try:
+                domains = cloudflare_get_domains(api_base, api_key=key)
+            except Exception as domain_exc:
+                raise Exception(
+                    f"Cloudflare 创建邮箱失败: {primary_exc}; 域名接口也失败: {domain_exc}"
+                ) from primary_exc
             if not domains:
-                raise Exception(f"Cloudflare 创建邮箱失败: {primary_exc}")
-            verified = [d for d in domains if d.get("isVerified")]
+                raise Exception(f"Cloudflare 创建邮箱失败: {primary_exc}") from primary_exc
+            verified = [d for d in domains if isinstance(d, dict) and d.get("isVerified")]
             target = verified[0] if verified else domains[0]
+            if not isinstance(target, dict):
+                raise Exception(f"Cloudflare 域名数据格式错误: {target!r}")
             domain = target.get("domain")
             if not domain:
                 raise Exception("Cloudflare 域名数据格式错误，缺少 domain 字段")
