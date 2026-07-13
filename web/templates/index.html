@@ -85,24 +85,24 @@
                 <option value="yyds">yyds</option>
               </select>
             </label>
-            <label>代理 Proxy <code>proxy</code>
-              <input type="text" id="q-proxy" placeholder="http://user:pass@host:port" />
+            <label>代理地址 <code>proxy</code>
+              <input type="text" id="q-proxy" placeholder="http://用户:密码@主机:端口" />
             </label>
 
-            <label data-mail="moemail">MoeMail API Key <code>moemail_api_key</code>
+            <label data-mail="moemail">MoeMail 密钥 <code>moemail_api_key</code>
               <input type="password" id="q-moemail_api_key" placeholder="X-API-Key" autocomplete="off" />
             </label>
-            <label class="field-full" data-mail="moemail">MoeMail API 地址 <code>moemail_api_base</code>
+            <label class="field-full" data-mail="moemail">MoeMail 接口地址 <code>moemail_api_base</code>
               <input type="text" id="q-moemail_api_base" placeholder="https://mail.nloln.cn" />
             </label>
 
-            <label class="field-full" data-mail="cloudflare">Cloudflare API Base <code>cloudflare_api_base</code>
+            <label class="field-full" data-mail="cloudflare">临时邮箱接口地址 <code>cloudflare_api_base</code>
               <input type="text" id="q-cloudflare_api_base" placeholder="https://mail.example.com" />
             </label>
-            <label data-mail="cloudflare">Cloudflare API Key <code>cloudflare_api_key</code>
-              <input type="password" id="q-cloudflare_api_key" placeholder="Admin 密码 / API Key" autocomplete="off" />
+            <label data-mail="cloudflare">临时邮箱管理密钥 <code>cloudflare_api_key</code>
+              <input type="password" id="q-cloudflare_api_key" placeholder="管理密码或 API Key" autocomplete="off" />
             </label>
-            <label data-mail="cloudflare">auth_mode <code>cloudflare_auth_mode</code>
+            <label data-mail="cloudflare">鉴权方式 <code>cloudflare_auth_mode</code>
               <select id="q-cloudflare_auth_mode">
                 <option value="x-admin-auth">x-admin-auth</option>
                 <option value="bearer">bearer</option>
@@ -113,21 +113,21 @@
               </select>
             </label>
 
-            <label class="field-full" data-mail="cloudmail">CloudMail URL <code>cloudmail_url</code>
+            <label class="field-full" data-mail="cloudmail">CloudMail 地址 <code>cloudmail_url</code>
               <input type="text" id="q-cloudmail_url" placeholder="https://mail.example.com" />
             </label>
-            <label data-mail="cloudmail">CloudMail admin <code>cloudmail_admin_email</code>
+            <label data-mail="cloudmail">CloudMail 管理员邮箱 <code>cloudmail_admin_email</code>
               <input type="text" id="q-cloudmail_admin_email" placeholder="admin@example.com" />
             </label>
-            <label data-mail="cloudmail">CloudMail password <code>cloudmail_password</code>
+            <label data-mail="cloudmail">CloudMail 密码 <code>cloudmail_password</code>
               <input type="password" id="q-cloudmail_password" autocomplete="off" />
             </label>
 
-            <label data-mail="duckmail">DuckMail API Key <code>duckmail_api_key</code>
+            <label data-mail="duckmail">DuckMail 密钥 <code>duckmail_api_key</code>
               <input type="password" id="q-duckmail_api_key" placeholder="DuckMail API Key" autocomplete="off" />
             </label>
 
-            <label data-mail="yyds">YYDS API Key <code>yyds_api_key</code>
+            <label data-mail="yyds">YYDS 密钥 <code>yyds_api_key</code>
               <input type="password" id="q-yyds_api_key" placeholder="yyds_api_key" autocomplete="off" />
             </label>
             <label data-mail="yyds">YYDS JWT <code>yyds_jwt</code>
@@ -140,18 +140,18 @@
           </div>
 
           <details class="advanced" id="adv-box" data-mail="cloudflare" hidden>
-            <summary>Cloudflare 路径高级选项（一般不用改）</summary>
+            <summary>接口路径高级选项（一般不用改）</summary>
             <div class="quick-grid" style="margin-top:12px">
-              <label>path accounts
+              <label>创建地址路径
                 <input type="text" id="q-cloudflare_path_accounts" placeholder="/admin/new_address" />
               </label>
-              <label>path messages
+              <label>邮件列表路径
                 <input type="text" id="q-cloudflare_path_messages" placeholder="/api/mails" />
               </label>
-              <label>path domains
+              <label>域名列表路径
                 <input type="text" id="q-cloudflare_path_domains" placeholder="/api/domains" />
               </label>
-              <label>path token
+              <label>令牌路径
                 <input type="text" id="q-cloudflare_path_token" placeholder="/api/token" />
               </label>
             </div>

@@ -141,11 +141,11 @@
     return el ? String(el.value || "").trim() : "";
   }
   const MAIL_HINTS = {
-    moemail: "MoeMail：填 API Key、API 地址；域名可选。",
-    cloudflare: "cloudflare_temp_email：填 API Base、Admin Key/密码、域名；路径一般不用改。",
-    cloudmail: "CloudMail：填管理端 URL、管理员邮箱与密码；域名写在 defaultDomains。",
-    duckmail: "DuckMail：填 API Key 即可。",
-    yyds: "YYDS：填 API Key 和/或 JWT。",
+    moemail: "MoeMail：填密钥和接口地址；域名可选。",
+    cloudflare: "临时邮箱：填接口地址、管理密钥/密码、域名；路径一般不用改。",
+    cloudmail: "CloudMail：填管理端地址、管理员邮箱与密码；域名写在邮箱域名。",
+    duckmail: "DuckMail：填密钥即可。",
+    yyds: "YYDS：填密钥和/或 JWT。",
   };
   function syncMailProviderFields() {
     const provider = (getVal("q-email_provider") || "moemail").toLowerCase();
