@@ -141,8 +141,8 @@
     return el ? String(el.value || "").trim() : "";
   }
   const MAIL_HINTS = {
-    moemail: "MoeMail：填密钥和接口地址；域名可选。",
-    cloudflare: "临时邮箱：接口地址填 Worker（xxx.workers.dev），不要填前端 Pages 域名；公开创建通常路径 /api/new_address，域名可选。",
+    moemail: "MoeMail：填密钥和接口地址；域名可空自动获取，或多个逗号分隔随机。",
+    cloudflare: "临时邮箱：接口地址填 Worker（xxx.workers.dev）。域名可空（自动获取）或多个逗号分隔随机抽取。",
     cloudmail: "CloudMail：填管理端地址、管理员邮箱与密码；域名写在邮箱域名。",
     duckmail: "DuckMail：填密钥即可。",
     yyds: "YYDS：填密钥和/或 JWT。",
@@ -168,9 +168,9 @@
       }
     }
     if (input) {
-      if (provider === "cloudflare") input.placeholder = "lxk.dpdns.org";
-      else if (provider === "cloudmail") input.placeholder = "mail.example.com";
-      else input.placeholder = "moemail.app";
+      if (provider === "cloudflare") input.placeholder = "temps.cc.cd,piv.cc.cd（可多个，随机）";
+      else if (provider === "cloudmail") input.placeholder = "a.com,b.com（可多个，随机）";
+      else input.placeholder = "a.com,b.com（可多个，随机；空则自动）";
     }
   }
   function fillQuickFromConfig(cfg) {

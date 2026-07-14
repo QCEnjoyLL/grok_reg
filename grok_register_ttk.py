@@ -606,6 +606,66 @@ def _cloudflare_response_snippet(resp, limit=240):
     return f"status={getattr(resp, 'status_code', '?')} body={one_line}"
 
 
+
+def _parse_domain_list(raw) -> list[str]:
+    """Parse domains from config: comma / Chinese comma / whitespace / JSON array."""
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+        except Exception:
+            pass
+    return [x.strip() for x in re.split(r"[,，;；\s]+", text) if x.strip()]
+
+
+def _pick_configured_domain(domains: list[str]) -> str:
+    """Random pick among configured domains (fallback round-robin if random fails)."""
+    global _cf_domain_index
+    clean = [d for d in (domains or []) if d]
+    if not clean:
+        return ""
+    try:
+        return random.choice(clean)
+    except Exception:
+        d = clean[_cf_domain_index % len(clean)]
+        _cf_domain_index += 1
+        return d
+
+
+def _cloudflare_fetch_domain_candidates(api_base: str) -> list[str]:
+    """Best-effort load domains from Worker when defaultDomains is empty."""
+    out: list[str] = []
+    try:
+        rows = cloudflare_get_domains(api_base, api_key=get_cloudflare_api_key())
+    except Exception:
+        rows = []
+    for item in rows or []:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        val = item.get("domain") or item.get("name") or item.get("value") or item.get("domains")
+        if val is None and item.get("id"):
+            val = item.get("id")
+        if isinstance(val, str) and val.strip():
+            out.append(val.strip())
+    # de-dup preserve order
+    seen = set()
+    uniq = []
+    for d in out:
+        k = d.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(d)
+    return uniq
+
+
 def cloudflare_create_temp_address(api_base):
     """适配 cloudflare_temp_email: POST new_address -> {address,jwt}."""
     global _cf_domain_index
@@ -626,15 +686,17 @@ def cloudflare_create_temp_address(api_base):
         if p not in path_candidates:
             path_candidates.append(p)
 
-    domains = [
-        x.strip()
-        for x in re.split(r"[,，\s]+", str(config.get("defaultDomains", "") or ""))
-        if x.strip()
-    ]
-    domain = ""
-    if domains:
-        domain = domains[_cf_domain_index % len(domains)]
-        _cf_domain_index += 1
+    domains = _parse_domain_list(config.get("defaultDomains", ""))
+    domain = _pick_configured_domain(domains)
+    # 未配置域名时尝试从 Worker 自动拉取，再随机选一个
+    if not domain:
+        try:
+            auto_domains = _cloudflare_fetch_domain_candidates(api_base)
+            domain = _pick_configured_domain(auto_domains)
+            if domain:
+                print(f"  [mail] auto domain from API: {domain} (pool={len(auto_domains)})", flush=True)
+        except Exception as exc:
+            print(f"  [mail] auto domain fetch failed: {exc}", flush=True)
     name = generate_username(10)
 
     errors = []
@@ -1747,17 +1809,15 @@ def moemail_get_config():
 
 
 def moemail_pick_domain(preferred=""):
-    global _cf_domain_index
     preferred = str(preferred or "").strip()
-    raw = str(config.get("defaultDomains", "") or "")
-    configured = [x.strip() for x in re.split(r"[,?\s]+", raw) if x.strip()]
     if preferred:
         return preferred
+    configured = _parse_domain_list(config.get("defaultDomains", ""))
     if configured:
-        d = configured[_cf_domain_index % len(configured)]
-        _cf_domain_index += 1
-        return d
-    # fallback: ask API
+        d = _pick_configured_domain(configured)
+        if d:
+            return d
+    # fallback: ask API then random pick
     try:
         data = moemail_get_config()
         domains = (
@@ -1769,8 +1829,8 @@ def moemail_pick_domain(preferred=""):
         )
         if isinstance(domains, dict):
             domains = domains.get("domains") or domains.get("list") or []
-        if isinstance(domains, list) and domains:
-            out = []
+        out = []
+        if isinstance(domains, list):
             for item in domains:
                 if isinstance(item, str) and item.strip():
                     out.append(item.strip())
@@ -1778,13 +1838,14 @@ def moemail_pick_domain(preferred=""):
                     val = item.get("domain") or item.get("name") or item.get("value")
                     if val:
                         out.append(str(val).strip())
-            if out:
-                d = out[_cf_domain_index % len(out)]
-                _cf_domain_index += 1
-                return d
+        d = _pick_configured_domain(out)
+        if d:
+            return d
     except Exception:
         pass
-    raise Exception("MoeMail ??? defaultDomains?? /api/config ???????")
+    raise Exception(
+        "MoeMail 未配置 defaultDomains，且 /api/config 也未返回可用域名"
+    )
 
 
 def moemail_generate_email(name=None, domain=None, expiry_ms=None):
@@ -2032,13 +2093,10 @@ def get_email_and_token(api_key=None):
         # CloudMail catch-all 模式：直接生成随机邮箱，无需注册
         # Cloudflare Email Routing 会自动将所有该域名的邮件路由到 Worker
         # 支持英文逗号、中文逗号、空格分隔
-        raw = str(config.get("defaultDomains", "") or "")
-        domains = [x.strip() for x in re.split(r"[,，\s]+", raw) if x.strip()]
+        domains = _parse_domain_list(config.get("defaultDomains", ""))
         if not domains:
-            raise Exception("CloudMail 需要在 defaultDomains 中配置可用域名")
-        global _cf_domain_index
-        domain = domains[_cf_domain_index % len(domains)]
-        _cf_domain_index += 1
+            raise Exception("CloudMail 需要在 defaultDomains 中配置可用域名（支持多个，逗号分隔随机抽取）")
+        domain = _pick_configured_domain(domains)
         username = generate_username(10)
         address = f"{username}@{domain}"
         # 返回占位 token（实际不用于邮件查询，邮件查询走公开 API）

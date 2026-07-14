@@ -4,7 +4,7 @@
   "// ===== 邮箱：注册验证码来源 =====": "",
   "// email_provider": "cloudmail | cloudflare | duckmail | yyds。推荐自建 cloudmail。",
   "email_provider": "moemail",
-  "// defaultDomains": "注册用邮箱域名，逗号分隔；cloudmail catch-all 域名写这里。",
+  "// defaultDomains": "注册用邮箱域名；可空（cloudflare/moemail 尝试自动获取），或多个逗号/空格分隔随机抽取。",
   "defaultDomains": "moemail.app",
   "// cloudmail_url": "CloudMail 管理端根 URL，如 https://mail.example.com",
   "cloudmail_url": "https://mail.example.com",
