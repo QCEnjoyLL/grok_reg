@@ -366,40 +366,46 @@
         ? '<span class="badge-up yes">已上传</span>'
         : '<span class="badge-up no">未上传</span>';
       const upAt = uploaded ? esc(r.uploaded_at || "-") : "-";
-      return `<tr>
-        <td>${esc(r.email)}</td>
-        <td class="col-upload">${badge}</td>
-        <td class="col-upload-at">${upAt}</td>
-        <td>${esc(r.mtime)}</td>
-        <td>${r.size}</td>
-        <td class="col-act col-act-btns">
-          <button type="button" class="btn sm btn-cpa-upload-one" data-file="${esc(file)}" data-uploaded="${uploaded ? "1" : "0"}">${uploaded ? "重传" : "上传"}</button>
-          ${uploaded ? "" : `<button type="button" class="btn ghost sm btn-cpa-mark-one" data-file="${esc(file)}">标为已上传</button>`}
-          <a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a>
-        </td>
-      </tr>`;
+      const mtime = esc(r.mtime || "-");
+      const size = (r.size == null || r.size === "") ? "-" : String(r.size);
+      const markBtn = uploaded
+        ? ""
+        : ('<button type="button" class="btn ghost sm btn-cpa-mark-one" data-file="' + esc(file) + '">标记</button>');
+      return (
+        "<tr>" +
+        '<td class="col-email" title="' + esc(r.email || "") + '">' + esc(r.email || "") + "</td>" +
+        '<td class="col-upload">' + badge + "</td>" +
+        '<td class="col-upload-at">' + upAt + "</td>" +
+        '<td class="col-mtime">' + mtime + "</td>" +
+        '<td class="col-size">' + size + "</td>" +
+        '<td class="col-act"><div class="col-act-btns">' +
+          '<button type="button" class="btn sm btn-cpa-upload-one" data-file="' + esc(file) + '" data-uploaded="' + (uploaded ? "1" : "0") + '">' + (uploaded ? "重传" : "上传") + "</button>" +
+          markBtn +
+          '<a class="btn ghost sm" href="' + href + '" download="' + esc(file) + '">下载</a>' +
+        "</div></td>" +
+        "</tr>"
+      );
     }).join("");
-    box.innerHTML = `<table>
-      <colgroup>
-        <col class="col-email">
-        <col class="col-upload">
-        <col class="col-upload-at">
-        <col class="col-mtime">
-        <col class="col-size">
-        <col class="col-act">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>${esc(__S.email || "邮箱")}</th>
-          <th>CPAMC</th>
-          <th>上传时间</th>
-          <th>mtime</th>
-          <th>size</th>
-          <th class="col-act"></th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    box.innerHTML =
+      '<table class="cpa-table">' +
+      "<colgroup>" +
+      '<col class="col-email">' +
+      '<col class="col-upload">' +
+      '<col class="col-upload-at">' +
+      '<col class="col-mtime">' +
+      '<col class="col-size">' +
+      '<col class="col-act">' +
+      "</colgroup>" +
+      "<thead><tr>" +
+      "<th>邮箱</th>" +
+      "<th>上传状态</th>" +
+      "<th>上传时间</th>" +
+      "<th>修改时间</th>" +
+      "<th>大小</th>" +
+      '<th class="col-act">操作</th>' +
+      "</tr></thead>" +
+      "<tbody>" + rows + "</tbody>" +
+      "</table>";
   }
   async function refreshConfig() {
     const data = await api("/api/config?redact=true");

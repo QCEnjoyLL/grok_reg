@@ -196,12 +196,12 @@ th {
 }
 /* shared data tables under accounts / cpa cards */
 #accounts-table table col.col-email,
-#cpa-table table col.col-email { width: 34%; }
+#cpa-table table col.col-email { width: 28%; }
 #accounts-table table col.col-pass { width: 28%; }
 #accounts-table table col.col-sso { width: 38%; }
-#cpa-table table col.col-mtime { width: 28%; }
-#cpa-table table col.col-size { width: 14%; }
-#cpa-table table col.col-act { width: 14%; }
+#cpa-table table col.col-mtime { width: 18%; }
+#cpa-table table col.col-size { width: 8%; }
+#cpa-table table col.col-act { width: 19%; }
 #cpa-table td.col-act,
 #cpa-table th.col-act { text-align: right; white-space: nowrap; word-break: normal; }
 .editor {
@@ -614,16 +614,77 @@ label.check-card input[type="checkbox"] {
   background: rgba(255, 170, 70, 0.14);
   border-color: rgba(255, 170, 70, 0.35);
 }
-.col-upload { width: 120px; }
-.col-upload-at { width: 170px; }
+.col-upload { width: 88px; }
+.col-upload-at { width: 156px; }
 
-
+/* action buttons live inside a div so table row borders stay continuous */
 .col-act-btns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
   align-items: center;
   justify-content: flex-end;
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
 }
-.col-act-btns .btn { white-space: nowrap; }
+.col-act-btns .btn,
+.col-act-btns a.btn {
+  white-space: nowrap;
+  padding: 4px 8px;
+  min-height: 28px;
+  font-size: 0.78rem;
+}
+
+/* CPA table: fit full width, no horizontal scrollbar; tighter rows */
+#cpa-table.table-wrap,
+#cpa-table {
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: min(62vh, 560px);
+}
+#cpa-table table.cpa-table,
+#cpa-table table {
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+#cpa-table table col.col-email { width: 28%; }
+#cpa-table table col.col-upload { width: 9%; }
+#cpa-table table col.col-upload-at { width: 18%; }
+#cpa-table table col.col-mtime { width: 18%; }
+#cpa-table table col.col-size { width: 8%; }
+#cpa-table table col.col-act { width: 19%; }
+#cpa-table th,
+#cpa-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#cpa-table td.col-email {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+#cpa-table td.col-upload,
+#cpa-table td.col-upload-at,
+#cpa-table td.col-mtime,
+#cpa-table td.col-size {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+#cpa-table td.col-act,
+#cpa-table th.col-act {
+  text-align: right;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+#cpa-table th {
+  white-space: nowrap;
+}

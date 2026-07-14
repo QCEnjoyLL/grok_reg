@@ -164,6 +164,30 @@ def resolve_accounts_path() -> Path:
     return DATA_DIR / "accounts_cli.txt"
 
 
+def _fmt_beijing(ts: float | int | str | None = None) -> str:
+    """Format timestamp/ISO string as Asia/Shanghai wall time."""
+    if ts is None or ts == "":
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+
+        bj = ZoneInfo("Asia/Shanghai")
+        if isinstance(ts, (int, float)):
+            dt = datetime.fromtimestamp(float(ts), tz=bj)
+        else:
+            s = str(ts).strip()
+            if not s:
+                return ""
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            dt = dt.astimezone(bj)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(ts)[:19].replace("T", " ")
+
 def resolve_cpa_dir() -> Path:
     cand = DATA_DIR / "cpa_auths"
     cand.mkdir(parents=True, exist_ok=True)
@@ -958,14 +982,16 @@ def api_cpa(
             uploaded_count += 1
         else:
             pending_count += 1
+        st_mtime = f.stat().st_mtime
         row = {
             "file": f.name,
             "email": email,
             "size": f.stat().st_size,
-            "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
+            "mtime": _fmt_beijing(st_mtime),
+            "mtime_ts": st_mtime,
             "uploaded": uploaded,
             "upload_status": "uploaded" if uploaded else "pending",
-            "uploaded_at": st.get("at") or "",
+            "uploaded_at": _fmt_beijing(st.get("at") or "") if uploaded else "",
             "upload_detail": st.get("detail") or "",
         }
         if status_key == "uploaded" and not uploaded:
