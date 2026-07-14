@@ -180,39 +180,47 @@
           <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
         </div>
         <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。</p>
-        <form id="form-cpa" class="form">
-          <div class="quick-grid">
-            <label><span class="field-title"><span class="field-name">是否生成 CPA 认证文件</span><code class="field-key">cpa_export_enabled</code></span>
+                <form id="form-cpa" class="form">
+          <div class="quick-grid cpa-grid">
+            <label>
+              <span class="field-title"><span class="field-name">是否生成 CPA 认证文件</span><code class="field-key">cpa_export_enabled</code></span>
               <select id="q-cpa_export_enabled">
                 <option value="true" selected>true (开)</option>
                 <option value="false">false (关)</option>
               </select>
             </label>
-            <label><span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">cpa_headless</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">cpa_headless</code></span>
               <select id="q-cpa_headless">
                 <option value="false" selected>false (有头，推荐)</option>
                 <option value="true">true (无头，不推荐)</option>
               </select>
             </label>
-            <label class="field-full"><span class="field-title"><span class="field-name">免费 Grok 4.5 API 地址</span><code class="field-key">cpa_base_url</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">免费 Grok 4.5 API 地址</span><code class="field-key">cpa_base_url</code></span>
               <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
             </label>
-            <label><span class="field-title"><span class="field-name">CPA / OIDC 专用代理</span><code class="field-key">cpa_proxy</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">CPA / OIDC 专用代理</span><code class="field-key">cpa_proxy</code></span>
               <input type="text" id="q-cpa_proxy" placeholder="direct / 空则跟注册 proxy" />
             </label>
-            <label><span class="field-title"><span class="field-name">认证文件目录</span><code class="field-key">cpa_auth_dir</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">认证文件目录</span><code class="field-key">cpa_auth_dir</code></span>
               <input type="text" id="q-cpa_auth_dir" placeholder="./cpa_auths" />
             </label>
-            <label><span class="field-title"><span class="field-name">自动上传到 CPA 管理接口</span><code class="field-key">cpa_management_upload_enabled</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">自动上传到 CPA 管理接口</span><code class="field-key">cpa_management_upload_enabled</code></span>
               <select id="q-cpa_management_upload_enabled">
                 <option value="false" selected>false (关)</option>
                 <option value="true">true (开)</option>
               </select>
             </label>
-            <label><span class="field-title"><span class="field-name">CPA 管理地址</span><code class="field-key">cpa_management_base</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">CPA 管理地址</span><code class="field-key">cpa_management_base</code></span>
               <input type="text" id="q-cpa_management_base" placeholder="http://192.168.x.x:8317" />
             </label>
-            <label><span class="field-title"><span class="field-name">CPA 管理密码</span><code class="field-key">cpa_management_key</code></span>
+            <label>
+              <span class="field-title"><span class="field-name">CPA 管理密码</span><code class="field-key">cpa_management_key</code></span>
               <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
           </div>
