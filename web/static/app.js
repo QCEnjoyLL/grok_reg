@@ -364,7 +364,11 @@
         <td class="col-upload-at">${upAt}</td>
         <td>${esc(r.mtime)}</td>
         <td>${r.size}</td>
-        <td class="col-act"><a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a></td>
+        <td class="col-act col-act-btns">
+          <button type="button" class="btn sm btn-cpa-upload-one" data-file="${esc(file)}" data-uploaded="${uploaded ? "1" : "0"}">${uploaded ? "重传" : "上传"}</button>
+          ${uploaded ? "" : `<button type="button" class="btn ghost sm btn-cpa-mark-one" data-file="${esc(file)}">标为已上传</button>`}
+          <a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a>
+        </td>
       </tr>`;
     }).join("");
     box.innerHTML = `<table>
@@ -860,6 +864,80 @@
   document.getElementById("btn-refresh-cpa")?.addEventListener("click", () => {
     refreshCpa().catch((e) => toast(String(e.message || e)));
   });
+
+  async function uploadCpaFiles(payload, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const data = await api("/api/cpa/upload", {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+        timeoutMs: 120000,
+      });
+      const ok = data.success || 0;
+      const fail = data.failed || 0;
+      const total = data.total || 0;
+      if (fail === 0) {
+        toast("CPAMC 上传完成：" + ok + "/" + total, "ok");
+      } else {
+        const firstErr = (data.results || []).find((r) => r && r.ok === false);
+        const detail = firstErr ? (firstErr.error || firstErr.file || "") : "";
+        toast("CPAMC 上传：成功 " + ok + "，失败 " + fail + (detail ? " · " + detail : ""), "err");
+      }
+      await refreshCpa();
+      return data;
+    } catch (e) {
+      toast("CPAMC 上传失败: " + (e.message || e), "err");
+      throw e;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  document.getElementById("btn-cpa-upload-pending")?.addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    if (!confirm("将所有「未上传」的 CPA 文件上传到 CPAMC？")) return;
+    await uploadCpaFiles({ pending_only: true, force: true }, btn).catch(() => {});
+  });
+
+  document.getElementById("btn-cpa-upload-all")?.addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    if (!confirm("强制重新上传目录中的全部 CPA 文件到 CPAMC？")) return;
+    await uploadCpaFiles({ pending_only: false, force: true }, btn).catch(() => {});
+  });
+
+  document.getElementById("cpa-table")?.addEventListener("click", async (ev) => {
+    const t = ev.target;
+    if (!(t instanceof HTMLElement)) return;
+    const upBtn = t.closest(".btn-cpa-upload-one");
+    if (upBtn) {
+      const file = upBtn.getAttribute("data-file") || "";
+      if (!file) return;
+      const already = upBtn.getAttribute("data-uploaded") === "1";
+      if (already && !confirm("重新上传 " + file + " 到 CPAMC？")) return;
+      await uploadCpaFiles({ file: file, force: true }, upBtn).catch(() => {});
+      return;
+    }
+    const markBtn = t.closest(".btn-cpa-mark-one");
+    if (markBtn) {
+      const file = markBtn.getAttribute("data-file") || "";
+      if (!file) return;
+      if (!confirm("将 " + file + " 标记为已上传（不实际请求 CPAMC）？")) return;
+      markBtn.disabled = true;
+      try {
+        await api("/api/cpa/mark", {
+          method: "POST",
+          body: JSON.stringify({ file: file, uploaded: true }),
+        });
+        toast("已标记为已上传", "ok");
+        await refreshCpa();
+      } catch (e) {
+        toast("标记失败: " + (e.message || e), "err");
+      } finally {
+        markBtn.disabled = false;
+      }
+    }
+  });
+
 
   function bindPager(kind, refreshFn) {
     const prev = document.getElementById(kind + "-prev");

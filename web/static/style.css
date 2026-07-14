@@ -608,3 +608,14 @@ label.check-card input[type="checkbox"] {
 }
 .col-upload { width: 120px; }
 .col-upload-at { width: 170px; }
+
+
+.col-act-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 220px;
+}
+.col-act-btns .btn { white-space: nowrap; }

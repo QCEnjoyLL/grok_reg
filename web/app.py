@@ -995,6 +995,162 @@ def api_cpa(
     }
 
 
+
+class CpaUploadBody(BaseModel):
+    """Manual upload of local CPA auth files to CPAMC management API."""
+
+    file: str | None = None
+    files: list[str] | None = None
+    pending_only: bool = False
+    force: bool = True  # re-upload even if already marked uploaded
+
+
+@app.post("/api/cpa/upload")
+def api_cpa_upload(request: Request, body: CpaUploadBody):
+    """Upload one/more local CPA auth JSON files to CPA management (CPAMC)."""
+    require_auth(request)
+    cfg = load_config_dict()
+    base = str(cfg.get("cpa_management_base") or "").strip()
+    key = str(cfg.get("cpa_management_key") or "").strip()
+    if not base or not key:
+        raise HTTPException(
+            status_code=400,
+            detail="未配置 cpa_management_base / cpa_management_key，请先在「必要配置」保存 CPA 管理地址和密码",
+        )
+
+    d = resolve_cpa_dir()
+    upload_state: dict = {}
+    state_path = d / ".upload_state.json"
+    if state_path.is_file():
+        try:
+            raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(raw_state, dict):
+                upload_state = raw_state
+        except Exception:
+            upload_state = {}
+
+    names: list[str] = []
+    if body.file:
+        names.append(str(body.file).strip())
+    if body.files:
+        names.extend(str(x).strip() for x in body.files if str(x).strip())
+
+    if names:
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for n in names:
+            key_name = Path(n).name
+            if key_name and key_name not in seen:
+                seen.add(key_name)
+                uniq.append(key_name)
+        names = uniq
+
+    if not names:
+        if d.is_dir():
+            for f in sorted(d.glob("xai-*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                st = upload_state.get(f.name) if isinstance(upload_state.get(f.name), dict) else {}
+                if body.pending_only and bool(st.get("uploaded")):
+                    continue
+                names.append(f.name)
+    elif body.pending_only:
+        filtered: list[str] = []
+        for n in names:
+            st = upload_state.get(n) if isinstance(upload_state.get(n), dict) else {}
+            if not bool(st.get("uploaded")):
+                filtered.append(n)
+        names = filtered
+
+    if not names:
+        return {"ok": True, "total": 0, "success": 0, "failed": 0, "results": [], "message": "没有可上传的文件"}
+
+    try:
+        from cpa_export import upload_cpa_auth_file, mark_cpa_uploaded
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"无法加载 cpa_export: {e}") from e
+
+    results = []
+    success = 0
+    failed = 0
+    for name in names:
+        safe = Path(name).name
+        if not safe.startswith("xai-") or not safe.endswith(".json") or ".." in safe:
+            results.append({"file": safe, "ok": False, "error": "非法文件名"})
+            failed += 1
+            continue
+        path_file = d / safe
+        if not path_file.is_file():
+            results.append({"file": safe, "ok": False, "error": "文件不存在"})
+            failed += 1
+            continue
+        st = upload_state.get(safe) if isinstance(upload_state.get(safe), dict) else {}
+        if not body.force and bool(st.get("uploaded")):
+            results.append({"file": safe, "ok": True, "skipped": True, "detail": "already uploaded"})
+            success += 1
+            continue
+        try:
+            info = upload_cpa_auth_file(path_file, cfg, log_callback=lambda m: None)
+            results.append({"file": safe, "ok": True, "status": info.get("status"), "response": info.get("response")})
+            success += 1
+        except Exception as e:
+            try:
+                mark_cpa_uploaded(path_file, ok=False, detail=str(e), auth_dir=d)
+            except Exception:
+                pass
+            results.append({"file": safe, "ok": False, "error": str(e)[:400]})
+            failed += 1
+
+    return {
+        "ok": failed == 0,
+        "total": len(names),
+        "success": success,
+        "failed": failed,
+        "results": results,
+    }
+
+
+class CpaMarkBody(BaseModel):
+    file: str | None = None
+    files: list[str] | None = None
+    uploaded: bool = True
+
+
+@app.post("/api/cpa/mark")
+def api_cpa_mark(request: Request, body: CpaMarkBody):
+    """Manually mark local CPA files as uploaded/pending without calling CPAMC."""
+    require_auth(request)
+    d = resolve_cpa_dir()
+    names: list[str] = []
+    if body.file:
+        names.append(str(body.file).strip())
+    if body.files:
+        names.extend(str(x).strip() for x in body.files if str(x).strip())
+    if not names:
+        raise HTTPException(status_code=400, detail="请提供 file 或 files")
+    try:
+        from cpa_export import mark_cpa_uploaded
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"无法加载 cpa_export: {e}") from e
+
+    results = []
+    for name in names:
+        safe = Path(name).name
+        if not safe.startswith("xai-") or not safe.endswith(".json"):
+            results.append({"file": safe, "ok": False, "error": "非法文件名"})
+            continue
+        path_file = d / safe
+        if not path_file.is_file():
+            results.append({"file": safe, "ok": False, "error": "文件不存在"})
+            continue
+        mark_cpa_uploaded(
+            path_file,
+            ok=bool(body.uploaded),
+            detail="manual mark" if body.uploaded else "manual unmark",
+            auth_dir=d,
+        )
+        results.append({"file": safe, "ok": True, "uploaded": bool(body.uploaded)})
+    return {"ok": True, "results": results}
+
+
 @app.get("/api/config")
 def api_config_get(request: Request, redact: bool = True):
     require_auth(request)
