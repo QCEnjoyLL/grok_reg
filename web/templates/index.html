@@ -227,19 +227,30 @@
         </form>
       </div>
 
-<div class="card">
-        <h2>注册任务</h2>
+<div class="card task-card">
+        <div class="card-head">
+          <h2>注册任务</h2>
+        </div>
+        <p class="hint">按需设置数量与并发；快速模式会压缩等待间隔。</p>
         <form id="form-register" class="form">
-          <label>再注册数量 --extra
-            <input type="number" name="extra" value="1" min="1" max="500" />
-          </label>
-          <label>线程 --threads
-            <input type="number" name="threads" value="1" min="1" max="10" />
-          </label>
-          <label>mint workers (-1=自动)
-            <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
-          </label>
-          <label class="check"><input type="checkbox" name="fast" checked /> 快速模式</label>
+          <div class="quick-grid task-grid">
+            <label>
+              <span class="field-title"><span class="field-name">再注册数量</span><code class="field-key">--extra</code></span>
+              <input type="number" name="extra" value="1" min="1" max="500" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">注册线程</span><code class="field-key">--threads</code></span>
+              <input type="number" name="threads" value="1" min="1" max="10" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Mint 并发</span><code class="field-key">mint_workers</code></span>
+              <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">快速模式</span><code class="field-key">fast</code></span>
+              <span class="check-inline"><input type="checkbox" name="fast" checked /> 开启后缩短等待</span>
+            </label>
+          </div>
           <div class="row card-actions">
             <button type="submit" class="btn primary">开始注册</button>
             <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
@@ -248,21 +259,34 @@
         </form>
       </div>
 
-      <div class="card" id="backfill-box">
-        <h2>补认证 Backfill</h2>
-        <p class="hint">一般用下方「为缺失账号生成 CPA」即可；这里可指定 limit / 邮箱 / timeout。</p>
+      <div class="card task-card" id="backfill-box">
+        <div class="card-head">
+          <h2>补认证 Backfill</h2>
+        </div>
+        <p class="hint">一般用下方「为缺失账号生成 CPA」；这里可指定数量、邮箱与超时。</p>
         <form id="form-backfill" class="form">
-          <label>limit (0=全部缺失)
-            <input type="number" name="limit" value="1" min="0" max="5000" />
-          </label>
-          <label>指定邮箱（可选）
-            <input type="text" name="email" placeholder="user@domain" />
-          </label>
-          <label>timeout 秒
-            <input type="number" name="timeout" value="300" min="30" />
-          </label>
-          <label class="check"><input type="checkbox" name="probe" checked /> probe grok-4.5</label>
-          <label class="check"><input type="checkbox" name="headless" /> headless (不推荐)</label>
+          <div class="quick-grid task-grid">
+            <label>
+              <span class="field-title"><span class="field-name">补生成数量</span><code class="field-key">limit</code></span>
+              <input type="number" name="limit" value="1" min="0" max="5000" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">超时秒数</span><code class="field-key">timeout</code></span>
+              <input type="number" name="timeout" value="300" min="30" />
+            </label>
+            <label class="field-full">
+              <span class="field-title"><span class="field-name">指定邮箱</span><code class="field-key">email</code></span>
+              <input type="text" name="email" placeholder="user@domain（可选，留空=按缺失列表）" />
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">探测模型</span><code class="field-key">probe</code></span>
+              <span class="check-inline"><input type="checkbox" name="probe" checked /> 探测 free build / grok-4.5</span>
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">headless</code></span>
+              <span class="check-inline"><input type="checkbox" name="headless" /> 不推荐（Docker 建议有头）</span>
+            </label>
+          </div>
           <div class="row card-actions">
             <button type="submit" class="btn primary">开始 Backfill</button>
           </div>

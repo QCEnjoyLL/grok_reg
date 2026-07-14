@@ -503,3 +503,48 @@ label .field-key + select {
 @media (max-width: 900px) {
   .quick-grid.mail-grid { grid-template-columns: 1fr; }
 }
+
+
+/* 注册 / Backfill 任务卡片 */
+.task-card .hint { margin: 0 0 12px; }
+.task-card .form { gap: 14px; }
+.quick-grid.task-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.quick-grid.task-grid > label {
+  min-width: 0;
+}
+.quick-grid.task-grid > label.field-full {
+  grid-column: 1 / -1;
+}
+label.check-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.02);
+}
+label.check-card .check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.88rem;
+  min-height: 28px;
+}
+label.check-card input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: auto;
+  accent-color: #4d7dff;
+}
+.task-card .card-actions {
+  margin-top: 2px;
+  padding-top: 2px;
+}
+@media (max-width: 900px) {
+  .quick-grid.task-grid { grid-template-columns: 1fr; }
+  .quick-grid.task-grid > label.field-full { grid-column: auto; }
+}
