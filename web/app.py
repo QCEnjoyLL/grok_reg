@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -192,6 +193,167 @@ def resolve_cpa_dir() -> Path:
     cand = DATA_DIR / "cpa_auths"
     cand.mkdir(parents=True, exist_ok=True)
     return cand
+
+def resolve_accounts_backup_dir() -> Path:
+    d = DATA_DIR / "accounts_cli_backup"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def resolve_cpa_backup_dir() -> Path:
+    d = DATA_DIR / "cpa_file_backup"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _stamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _zip_directory(root: Path, *, prefix: str = "") -> bytes:
+    """Zip files under root (files + one-level subdirs)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if not root.is_dir():
+            return buf.getvalue()
+        for p in sorted(root.rglob("*")):
+            if not p.is_file():
+                continue
+            # skip junk
+            if p.name.startswith(".") and p.suffix == ".tmp":
+                continue
+            arc = p.relative_to(root).as_posix()
+            if prefix:
+                arc = f"{prefix.rstrip('/')}/{arc}"
+            zf.write(p, arcname=arc)
+    return buf.getvalue()
+
+
+def _run_backfill_sync(*, timeout_sec: int = 3600) -> dict[str, Any]:
+    """Run missing-CPA backfill in-process wait (blocks request thread)."""
+    script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
+    if not script.is_file():
+        raise HTTPException(500, f"backfill script missing: {script}")
+    # Prefer DATA_DIR accounts; script default is APP_HOME (symlinked in Docker)
+    accounts = resolve_accounts_path()
+    out_dir = resolve_cpa_dir()
+    cmd = [
+        sys.executable,
+        "-u",
+        str(script),
+        "--accounts",
+        str(accounts),
+        "--out-dir",
+        str(out_dir),
+        "--limit",
+        "0",
+        "--timeout",
+        "300",
+        "--sleep",
+        "2",
+        "--probe",
+    ]
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    # If a dashboard job is running, refuse to double-run browsers
+    if jobs.is_running():
+        raise HTTPException(409, "有任务正在运行，请先停止后再归档账号")
+    proc = subprocess.run(
+        cmd,
+        cwd=str(APP_HOME),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=max(60, int(timeout_sec)),
+    )
+    tail = ((proc.stdout or "") + "\n" + (proc.stderr or ""))[-2000:]
+    return {"ok": proc.returncode == 0, "code": proc.returncode, "log_tail": tail}
+
+
+def archive_accounts_file(*, run_backfill: bool = True, backfill_timeout: int = 3600) -> dict[str, Any]:
+    """Backfill missing CPA (optional), then move accounts_cli.txt into backup and recreate empty file."""
+    accounts = resolve_accounts_path()
+    backup_dir = resolve_accounts_backup_dir()
+    result: dict[str, Any] = {
+        "ok": True,
+        "accounts_file": str(accounts),
+        "backup_dir": str(backup_dir),
+    }
+    line_count = 0
+    if accounts.is_file():
+        line_count = sum(1 for ln in accounts.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip())
+    result["account_count"] = line_count
+
+    if run_backfill and line_count > 0:
+        try:
+            bf = _run_backfill_sync(timeout_sec=backfill_timeout)
+            result["backfill"] = {"ok": bf.get("ok"), "code": bf.get("code")}
+            if not bf.get("ok"):
+                result["backfill_warning"] = "补生成 CPA 未完全成功，仍继续归档账号文件"
+                result["backfill_log_tail"] = bf.get("log_tail")
+        except subprocess.TimeoutExpired:
+            result["backfill"] = {"ok": False, "code": -1}
+            result["backfill_warning"] = "补生成 CPA 超时，仍继续归档账号文件"
+        except HTTPException:
+            raise
+        except Exception as e:
+            result["backfill"] = {"ok": False, "error": str(e)}
+            result["backfill_warning"] = f"补生成 CPA 异常: {e}；仍继续归档"
+
+    if not accounts.is_file() and line_count == 0:
+        accounts.write_text("", encoding="utf-8")
+        result["archived"] = False
+        result["message"] = "账号文件为空，已确保存在空 accounts_cli.txt"
+        return result
+
+    stamp = _stamp()
+    dest = backup_dir / f"accounts_cli_{stamp}.txt"
+    # move (or copy+truncate if cross-device oddities)
+    if accounts.is_file():
+        shutil.move(str(accounts), str(dest))
+    # recreate empty active file
+    accounts.write_text("", encoding="utf-8")
+    result["archived"] = True
+    result["backup_file"] = dest.name
+    result["backup_path"] = str(dest)
+    return result
+
+
+def archive_cpa_files() -> dict[str, Any]:
+    """Move current xai-*.json into dated subfolder under cpa_file_backup."""
+    cpa_dir = resolve_cpa_dir()
+    backup_root = resolve_cpa_backup_dir()
+    files = sorted(cpa_dir.glob("xai-*.json")) if cpa_dir.is_dir() else []
+    stamp = _stamp()
+    batch_dir = backup_root / f"cpa_{stamp}"
+    moved = []
+    if files:
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            dest = batch_dir / f.name
+            shutil.move(str(f), str(dest))
+            moved.append(f.name)
+        # prune upload state for moved files
+        state_path = cpa_dir / ".upload_state.json"
+        if state_path.is_file():
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                if isinstance(state, dict):
+                    for name in moved:
+                        state.pop(name, None)
+                    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except Exception:
+                pass
+    return {
+        "ok": True,
+        "archived": bool(moved),
+        "moved_count": len(moved),
+        "backup_dir": str(backup_root),
+        "batch_dir": str(batch_dir) if moved else "",
+        "batch_name": batch_dir.name if moved else "",
+        "files": moved[:50],
+        "message": "没有可归档的 CPA 文件" if not moved else f"已归档 {len(moved)} 个文件",
+    }
 
 
 def load_config_dict() -> dict[str, Any]:
@@ -1466,6 +1628,109 @@ def api_status_do(
         },
     )
 
+
+
+class ArchiveAccountsBody(BaseModel):
+    run_backfill: bool = True
+    backfill_timeout: int = Field(3600, ge=60, le=14400)
+
+
+@app.post("/api/archive/accounts")
+def api_archive_accounts(request: Request, body: ArchiveAccountsBody | None = None):
+    """Archive accounts_cli.txt after optional missing-CPA backfill."""
+    require_auth(request)
+    body = body or ArchiveAccountsBody()
+    if jobs.is_running():
+        raise HTTPException(409, "有任务正在运行，请先停止后再归档")
+    try:
+        result = archive_accounts_file(
+            run_backfill=bool(body.run_backfill),
+            backfill_timeout=int(body.backfill_timeout or 3600),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"账号归档失败: {e}") from e
+    jobs.append_log(f"[archive] accounts -> {result.get('backup_file') or result.get('message')}")
+    return result
+
+
+@app.post("/api/archive/cpa")
+def api_archive_cpa(request: Request):
+    """Move current CPA auth files into cpa_file_backup/<dated>/."""
+    require_auth(request)
+    if jobs.is_running():
+        raise HTTPException(409, "有任务正在运行，请先停止后再归档")
+    try:
+        result = archive_cpa_files()
+    except Exception as e:
+        raise HTTPException(500, f"CPA 归档失败: {e}") from e
+    jobs.append_log(f"[archive] cpa moved={result.get('moved_count')} batch={result.get('batch_name')}")
+    return result
+
+
+@app.get("/api/archive/status")
+def api_archive_status(request: Request):
+    require_auth(request)
+    ab = resolve_accounts_backup_dir()
+    cb = resolve_cpa_backup_dir()
+    a_files = sorted(ab.glob("accounts_cli_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True) if ab.is_dir() else []
+    c_batches = sorted([p for p in cb.iterdir() if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True) if cb.is_dir() else []
+    c_loose = list(cb.glob("xai-*.json")) if cb.is_dir() else []
+    return {
+        "accounts_backup_dir": str(ab),
+        "cpa_backup_dir": str(cb),
+        "accounts_archives": len(a_files),
+        "cpa_batches": len(c_batches),
+        "cpa_loose_files": len(c_loose),
+        "latest_accounts": a_files[0].name if a_files else "",
+        "latest_cpa_batch": c_batches[0].name if c_batches else "",
+    }
+
+
+@app.get("/api/download/accounts-archive")
+def download_accounts_archive(request: Request):
+    """Download all archived accounts_cli_*.txt as zip."""
+    require_auth(request)
+    d = resolve_accounts_backup_dir()
+    files = sorted(d.glob("accounts_cli_*.txt")) if d.is_dir() else []
+    if not files:
+        raise HTTPException(404, "暂无归档账号文件")
+    data = _zip_directory(d)
+    ts = _stamp()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="accounts_archive_{ts}.zip"',
+            "Content-Length": str(len(data)),
+        },
+    )
+
+
+@app.get("/api/download/cpa-archive")
+def download_cpa_archive(request: Request):
+    """Download archived CPA files (all batches under cpa_file_backup) as zip."""
+    require_auth(request)
+    d = resolve_cpa_backup_dir()
+    if not d.is_dir():
+        raise HTTPException(404, "暂无归档 CPA 文件")
+    has = any(d.rglob("xai-*.json")) or any(d.glob("xai-*.json"))
+    if not has:
+        # still allow zip of whatever is there
+        has = any(p.is_file() for p in d.rglob("*"))
+    if not has:
+        raise HTTPException(404, "暂无归档 CPA 文件")
+    data = _zip_directory(d)
+    ts = _stamp()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="cpa_archive_{ts}.zip"',
+            "Content-Length": str(len(data)),
+        },
+    )
 
 @app.get("/api/download/accounts")
 def download_accounts(request: Request):

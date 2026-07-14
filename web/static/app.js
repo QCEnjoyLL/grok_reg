@@ -259,6 +259,10 @@
     setBadge(st.job);
     if (st.novnc_url) applyNovncUrl(st.novnc_url);
     document.getElementById("link-accounts").href = withToken("/api/download/accounts");
+    const linkAccArch = document.getElementById("link-accounts-archive");
+    if (linkAccArch) linkAccArch.href = withToken("/api/download/accounts-archive");
+    const linkCpaArch = document.getElementById("link-cpa-archive");
+    if (linkCpaArch) linkCpaArch.href = withToken("/api/download/cpa-archive");
     const linkCpa = document.getElementById("link-cpa");
     if (linkCpa) linkCpa.href = withToken("/api/download/cpa");
     const linkCpa2 = document.getElementById("link-cpa-2");
@@ -876,7 +880,57 @@
     }
   });
 
-    function bindAccountsSecrets() {
+    document.getElementById("btn-archive-accounts")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-archive-accounts");
+    const ok = confirm(
+      "确认归档账号？\n\n1) 先为缺失账号补生成 CPA（可能较久）\n2) 将 accounts_cli.txt 按日期备份到 accounts_cli_backup/\n3) 清空当前账号列表\n\n请确保当前没有注册/补生成任务在运行。"
+    );
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "归档中..."; }
+    try {
+      toast("[ui] 开始归档账号（含补生成 CPA）...");
+      const res = await api("/api/archive/accounts", {
+        method: "POST",
+        body: JSON.stringify({ run_backfill: true, backfill_timeout: 3600 }),
+        timeoutMs: 3700000,
+      });
+      let msg = res.archived
+        ? ("账号已归档: " + (res.backup_file || "") + "（原 " + (res.account_count || 0) + " 条）")
+        : (res.message || "账号归档完成");
+      if (res.backfill_warning) msg += "；注意: " + res.backfill_warning;
+      toast(msg, res.backfill_warning ? "err" : "ok");
+      await Promise.all([refreshAccounts().catch(() => {}), refreshCpa().catch(() => {}), refreshStatus().catch(() => {})]);
+    } catch (err) {
+      toast("账号归档失败: " + (err.message || err), "err");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "归档账号"; }
+    }
+  });
+
+  document.getElementById("btn-archive-cpa")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-archive-cpa");
+    const ok = confirm(
+      "确认归档 CPA 文件？\n\n会把当前 cpa_auths 下所有 xai-*.json 移动到 cpa_file_backup/cpa_日期/。\n请确保当前没有注册/补生成任务在运行。"
+    );
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "归档中..."; }
+    try {
+      toast("[ui] 开始归档 CPA 文件...");
+      const res = await api("/api/archive/cpa", {
+        method: "POST",
+        body: JSON.stringify({}),
+        timeoutMs: 120000,
+      });
+      toast(res.message || ("CPA 已归档 " + (res.moved_count || 0) + " 个"), "ok");
+      await Promise.all([refreshCpa().catch(() => {}), refreshStatus().catch(() => {})]);
+    } catch (err) {
+      toast("CPA 归档失败: " + (err.message || err), "err");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "归档 CPA"; }
+    }
+  });
+
+  function bindAccountsSecrets() {
     const box = document.getElementById("accounts-table");
     if (!box || box.dataset.secretBound === "1") return;
     box.dataset.secretBound = "1";

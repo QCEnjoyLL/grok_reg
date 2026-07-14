@@ -312,9 +312,11 @@
           <div class="row" style="gap:8px;flex-wrap:wrap;">
             <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
             <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
+            <button type="button" id="btn-archive-accounts" class="btn ghost sm" title="先补生成缺失 CPA，再把 accounts_cli.txt 按日期备份并清空">归档账号</button>
+            <a class="btn ghost sm" href="/api/download/accounts-archive" id="link-accounts-archive">下载归档账号</a>
           </div>
         </div>
-        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。</p>
+        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。归档会先补生成缺失 CPA，再把 <code>accounts_cli.txt</code> 备份到 <code>accounts_cli_backup/</code> 并清空当前列表。</p>
         <div id="accounts-table" class="table-wrap">加载中...</div>
         <div class="pager" id="accounts-pager" data-kind="accounts">
           <div class="pager-left">
@@ -343,7 +345,9 @@
           <div class="row" style="gap:8px;flex-wrap:wrap;">
             <button type="button" id="btn-cpa-upload-pending" class="btn sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
             <button type="button" id="btn-cpa-upload-all" class="btn ghost sm" title="强制重新上传当前目录全部 CPA 文件">全部重传</button>
+            <button type="button" id="btn-archive-cpa" class="btn ghost sm" title="把当前 cpa_auths 中的 xai-*.json 全部移入备份目录">归档 CPA</button>
             <a class="btn ghost sm" href="/api/download/cpa" id="link-cpa-2">下载全部 zip</a>
+            <a class="btn ghost sm" href="/api/download/cpa-archive" id="link-cpa-archive">下载归档 CPA</a>
             <button type="button" id="btn-refresh-cpa" class="btn ghost sm">刷新</button>
           </div>
         </div>
