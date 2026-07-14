@@ -38,7 +38,15 @@
     clearTimeout(timer);
     if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((data.detail || data.message || res.statusText) + " @ " + path);
+    if (!res.ok) {
+      let detail = data.detail || data.message || res.statusText || res.status;
+      if (Array.isArray(detail)) {
+        detail = detail.map((x) => (x && (x.msg || x.message || JSON.stringify(x))) || String(x)).join("; ");
+      } else if (detail && typeof detail === "object") {
+        detail = detail.msg || detail.message || JSON.stringify(detail);
+      }
+      throw new Error(String(detail) + " @ " + path);
+    }
     return data;
   }
   function ensureToastHost() {
@@ -868,25 +876,34 @@
   async function uploadCpaFiles(payload, btn) {
     if (btn) btn.disabled = true;
     try {
+      const body = Object.assign({ workers: 4 }, payload || {});
+      // bulk pending/all: batch to avoid gateway/proxy timeouts on large sets
+      const isBulk = !body.file && !(body.files && body.files.length);
+      if (isBulk && body.limit == null) body.limit = 80;
       const data = await api("/api/cpa/upload", {
         method: "POST",
-        body: JSON.stringify(payload || {}),
-        timeoutMs: 120000,
+        body: JSON.stringify(body),
+        timeoutMs: 300000,
       });
       const ok = data.success || 0;
       const fail = data.failed || 0;
       const total = data.total || 0;
+      let msg;
       if (fail === 0) {
-        toast("CPAMC 上传完成：" + ok + "/" + total, "ok");
+        msg = "CPAMC 上传完成：" + ok + "/" + total;
+        if (data.truncated) msg += "（本批上限 " + body.limit + "，可再次点击继续）";
+        toast(msg, "ok");
       } else {
         const firstErr = (data.results || []).find((r) => r && r.ok === false);
-        const detail = firstErr ? (firstErr.error || firstErr.file || "") : "";
+        let detail = firstErr ? (firstErr.error || firstErr.file || "") : "";
+        if (detail && typeof detail === "object") detail = JSON.stringify(detail);
         toast("CPAMC 上传：成功 " + ok + "，失败 " + fail + (detail ? " · " + detail : ""), "err");
       }
       await refreshCpa();
       return data;
     } catch (e) {
-      toast("CPAMC 上传失败: " + (e.message || e), "err");
+      let msg = e && e.message ? e.message : String(e);
+      toast("CPAMC 上传失败: " + msg, "err");
       throw e;
     } finally {
       if (btn) btn.disabled = false;

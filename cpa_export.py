@@ -15,11 +15,13 @@ import time
 import urllib.request
 import uuid
 from pathlib import Path
+import threading
 from typing import Any, Callable
 
 _REG_DIR = Path(__file__).resolve().parent
 _DEFAULT_OUT = _REG_DIR / "cpa_auths"
 _DEFAULT_CPA = Path("")  # empty = do not assume a machine-local CPA path
+_UPLOAD_STATE_LOCK = threading.RLock()
 
 
 def resolve_cpa_proxy(cfg: dict) -> str:
@@ -66,27 +68,37 @@ def mark_cpa_uploaded(
     detail: str = "",
     auth_dir: str | Path | None = None,
 ) -> None:
-    """Persist local CPAMC upload status next to cpa auth files."""
+    """Persist local CPAMC upload status next to cpa auth files (thread-safe)."""
     src = Path(auth_path)
     state_dir = Path(auth_dir).expanduser() if auth_dir else src.parent
     if not state_dir.is_absolute():
         state_dir = (_REG_DIR / state_dir).resolve()
     state_path = state_dir / ".upload_state.json"
-    state = load_cpa_upload_state(state_dir)
     key = src.name
     from datetime import datetime, timezone
 
-    state[key] = {
+    entry = {
         "uploaded": bool(ok),
         "file": key,
         "at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "detail": str(detail or "")[:300],
     }
-    try:
-        state_dir.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+    with _UPLOAD_STATE_LOCK:
+        state = load_cpa_upload_state(state_dir)
+        state[key] = entry
+        text = json.dumps(state, ensure_ascii=False, indent=2) + "\n"
+        try:
+            state_dir.mkdir(parents=True, exist_ok=True)
+            tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(state_path)
+        except Exception:
+            try:
+                state_path.write_text(text, encoding="utf-8")
+            except Exception:
+                pass
+
+
 
 def upload_cpa_auth_file(
     auth_path: str | Path,

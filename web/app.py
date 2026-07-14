@@ -13,6 +13,7 @@ import sys
 import threading
 import zipfile
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1003,6 +1004,8 @@ class CpaUploadBody(BaseModel):
     files: list[str] | None = None
     pending_only: bool = False
     force: bool = True  # re-upload even if already marked uploaded
+    limit: int | None = Field(default=None, ge=1, le=2000)
+    workers: int = Field(default=4, ge=1, le=16)
 
 
 @app.post("/api/cpa/upload")
@@ -1060,6 +1063,12 @@ def api_cpa_upload(request: Request, body: CpaUploadBody):
                 filtered.append(n)
         names = filtered
 
+    truncated = False
+    limit = int(body.limit) if body.limit else 0
+    if limit > 0 and len(names) > limit:
+        names = names[:limit]
+        truncated = True
+
     if not names:
         return {"ok": True, "total": 0, "success": 0, "failed": 0, "results": [], "message": "没有可上传的文件"}
 
@@ -1068,42 +1077,54 @@ def api_cpa_upload(request: Request, body: CpaUploadBody):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"无法加载 cpa_export: {e}") from e
 
-    results = []
-    success = 0
-    failed = 0
-    for name in names:
+    def _upload_one(name: str) -> dict:
         safe = Path(name).name
         if not safe.startswith("xai-") or not safe.endswith(".json") or ".." in safe:
-            results.append({"file": safe, "ok": False, "error": "非法文件名"})
-            failed += 1
-            continue
+            return {"file": safe, "ok": False, "error": "非法文件名"}
         path_file = d / safe
         if not path_file.is_file():
-            results.append({"file": safe, "ok": False, "error": "文件不存在"})
-            failed += 1
-            continue
+            return {"file": safe, "ok": False, "error": "文件不存在"}
         st = upload_state.get(safe) if isinstance(upload_state.get(safe), dict) else {}
         if not body.force and bool(st.get("uploaded")):
-            results.append({"file": safe, "ok": True, "skipped": True, "detail": "already uploaded"})
-            success += 1
-            continue
+            return {"file": safe, "ok": True, "skipped": True, "detail": "already uploaded"}
         try:
             info = upload_cpa_auth_file(path_file, cfg, log_callback=lambda m: None)
-            results.append({"file": safe, "ok": True, "status": info.get("status"), "response": info.get("response")})
-            success += 1
+            return {"file": safe, "ok": True, "status": info.get("status"), "response": info.get("response")}
         except Exception as e:
             try:
                 mark_cpa_uploaded(path_file, ok=False, detail=str(e), auth_dir=d)
             except Exception:
                 pass
-            results.append({"file": safe, "ok": False, "error": str(e)[:400]})
-            failed += 1
+            return {"file": safe, "ok": False, "error": str(e)[:400]}
 
+    workers = max(1, min(int(body.workers or 4), 16, len(names)))
+    results: list[dict] = []
+    if len(names) == 1 or workers == 1:
+        results = [_upload_one(n) for n in names]
+    else:
+        ordered: list[dict | None] = [None] * len(names)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            fut_map = {pool.submit(_upload_one, name): idx for idx, name in enumerate(names)}
+            for fut in as_completed(fut_map):
+                idx = fut_map[fut]
+                try:
+                    ordered[idx] = fut.result()
+                except Exception as e:
+                    ordered[idx] = {"file": names[idx], "ok": False, "error": str(e)[:400]}
+        results = [
+            r if isinstance(r, dict) else {"file": names[i], "ok": False, "error": "unknown"}
+            for i, r in enumerate(ordered)
+        ]
+
+    success = sum(1 for r in results if r.get("ok"))
+    failed = len(results) - success
     return {
         "ok": failed == 0,
         "total": len(names),
         "success": success,
         "failed": failed,
+        "workers": workers,
+        "truncated": truncated,
         "results": results,
     }
 
@@ -1149,7 +1170,6 @@ def api_cpa_mark(request: Request, body: CpaMarkBody):
         )
         results.append({"file": safe, "ok": True, "uploaded": bool(body.uploaded)})
     return {"ok": True, "results": results}
-
 
 @app.get("/api/config")
 def api_config_get(request: Request, redact: bool = True):

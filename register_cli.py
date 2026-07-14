@@ -386,6 +386,11 @@ def _run_mint_job(worker_id: int | str, job: dict[str, Any], config: dict) -> di
         )
         if result.get("ok"):
             log(worker_id, f"+ CPA auth: {result.get('path')}")
+            if result.get("probe_soft_fail"):
+                log(
+                    worker_id,
+                    f"[cpa] probe soft-fail but file kept: {result.get('probe_error') or result.get('error') or ''}",
+                )
             _inc("mint_success")
         elif result.get("skipped"):
             _inc("mint_skip")

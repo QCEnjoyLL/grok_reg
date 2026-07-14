@@ -65,6 +65,12 @@ def _apply_models_probe(
     proxy: str | None,
     probe_chat: bool,
 ) -> None:
+    """Attach probe results without revoking a successful token write.
+
+    Do not flip result["ok"] to False when free-build models are missing if
+    the CPA auth file was already written. Soft-fail keeps mint_success stats
+    and still allows CPAMC auto-upload.
+    """
     result["probe_models"] = pr
     probe_log = (
         "probe models: ok="
@@ -77,9 +83,20 @@ def _apply_models_probe(
     if not pr.get("ok") and pr.get("error"):
         probe_log += " error=" + str(pr.get("error"))[:300]
     log(probe_log)
-    if not pr.get("has_grok_45"):
-        result["ok"] = False
-        result["error"] = _classify_probe_failure(pr)
+
+    probe_ok = bool(pr.get("ok")) and bool(pr.get("has_grok_45"))
+    result["probe_ok"] = probe_ok
+    if not probe_ok:
+        warn = _classify_probe_failure(pr)
+        result["probe_error"] = warn
+        if result.get("path"):
+            result["ok"] = True
+            result["probe_soft_fail"] = True
+            log("! CPA probe soft-fail (file kept): " + warn)
+        else:
+            result["ok"] = False
+            result["error"] = warn
+
     if probe_chat and pr.get("has_grok_45"):
         ch = probe_mini_response(access, base_url=base_url, proxy=proxy)
         result["probe_chat"] = ch
@@ -92,10 +109,16 @@ def _apply_models_probe(
             + repr(ch.get("text"))
         )
         if not ch.get("ok"):
-            result["ok"] = False
-            result["error"] = (
-                "chat probe failed: " + str(ch.get("error") or ch.get("status"))
-            )
+            chat_err = "chat probe failed: " + str(ch.get("error") or ch.get("status"))
+            result["probe_chat_error"] = chat_err
+            result["probe_ok"] = False
+            if result.get("path"):
+                result["ok"] = True
+                result["probe_soft_fail"] = True
+                log("! CPA chat probe soft-fail (file kept): " + chat_err)
+            else:
+                result["ok"] = False
+                result["error"] = chat_err
 
 
 def _access_token_from_cpa_file(path: str | Path) -> str:
