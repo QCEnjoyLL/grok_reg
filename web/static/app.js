@@ -905,6 +905,25 @@
     });
   }
   bindAccountsSecrets();
+// Floating back-to-top
+  (function bindBackTop() {
+    const btn = document.getElementById("btn-back-top");
+    if (!btn) return;
+    const toggle = () => {
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      if (y > 280) btn.removeAttribute("hidden");
+      else btn.setAttribute("hidden", "");
+    };
+    window.addEventListener("scroll", toggle, { passive: true });
+    btn.addEventListener("click", () => {
+      try {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (_) {
+        window.scrollTo(0, 0);
+      }
+    });
+    toggle();
+  })();
 
   function bindCpaFilters() {
     const statusEl = document.getElementById("cpa-filter-status");

@@ -20,6 +20,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <a class="btn ghost repo-link" href="https://github.com/QCEnjoyLL/grok_reg" target="_blank" rel="noopener noreferrer" title="GitHub 项目地址">项目地址</a>
         <span id="build-badge" class="badge idle" title="build">build {{ build }}</span>
         <span id="run-badge" class="badge idle">空闲</span>
         <button id="btn-refresh" class="btn ghost" type="button">刷新状态</button>
@@ -395,6 +396,7 @@
       </div>
     </section>
   </div>
+  <button type="button" id="btn-back-top" class="back-top" title="回到顶部" aria-label="回到顶部" hidden>↑</button>
   <script>
     window.__NOVNC_URL__ = {{ novnc_url|tojson }};
   </script>
