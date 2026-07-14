@@ -746,3 +746,18 @@ label.check-card input[type="checkbox"] {
   word-break: normal;
   overflow-wrap: normal;
 }
+
+.logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: block;
+  flex: 0 0 auto;
+  box-shadow: 0 6px 18px rgba(40, 90, 180, 0.28);
+  background: transparent;
+}
+.login-brand .logo-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
