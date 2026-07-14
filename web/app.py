@@ -199,6 +199,7 @@ class JobManager:
         self.finished_at: str | None = None
         self.exit_code: int | None = None
         self.logs: deque[str] = deque(maxlen=MAX_LOG_LINES)
+        self._log_epoch: int = 0
         self.stats: dict[str, int] = {
             "reg_success": 0,
             "reg_fail": 0,
@@ -254,6 +255,7 @@ class JobManager:
                 "pid": self.proc.pid if self.proc and running else None,
                 "stats": dict(self.stats),
                 "log_lines": len(self.logs),
+                "log_epoch": self._log_epoch,
             }
 
     def get_logs(self, tail: int = 200) -> list[str]:
@@ -274,6 +276,7 @@ class JobManager:
             run_env.setdefault("PYTHONUNBUFFERED", "1")
             run_env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":99"))
             self.logs.clear()
+            self._log_epoch += 1
             self.stats = {k: 0 for k in self.stats}
             self.kind = kind
             self.cmd = list(cmd)
@@ -797,18 +800,32 @@ async def ws_logs(ws: WebSocket, token: str = ""):
         return
     await ws.accept()
     last = 0
+    last_epoch = -1
 
     async def _pump_logs() -> None:
-        nonlocal last
+        nonlocal last, last_epoch
         while True:
+            st = jobs.status()
+            epoch = int(st.get("log_epoch") or 0)
             lines = jobs.get_logs(0)
-            if len(lines) > last:
+            # 新任务 clear logs 会 bump epoch；重置游标，避免中途再开任务看不到实时日志
+            if epoch != last_epoch:
+                last_epoch = epoch
+                last = 0
+                await ws.send_json({
+                    "type": "logs",
+                    "reset": True,
+                    "lines": lines,
+                    "status": st,
+                })
+                last = len(lines)
+            elif len(lines) > last:
                 chunk = lines[last:]
                 last = len(lines)
-                await ws.send_json({"type": "logs", "lines": chunk, "status": jobs.status()})
+                await ws.send_json({"type": "logs", "lines": chunk, "status": st})
             else:
-                await ws.send_json({"type": "ping", "lines": [], "status": jobs.status()})
-            await asyncio.sleep(0.8)
+                await ws.send_json({"type": "ping", "lines": [], "status": st})
+            await asyncio.sleep(0.4)
 
     async def _recv_cmds() -> None:
         while True:
@@ -830,7 +847,15 @@ async def ws_logs(ws: WebSocket, token: str = ""):
                 result = await asyncio.to_thread(_handle_task_action, op, msg)
                 await ws.send_json({"type": "ack", "op": op, **result})
             except HTTPException as he:
-                await ws.send_json({"type": "error", "ok": False, "op": op, "detail": he.detail, "status_code": he.status_code})
+                await ws.send_json(
+                    {
+                        "type": "error",
+                        "ok": False,
+                        "op": op,
+                        "detail": he.detail,
+                        "status_code": he.status_code,
+                    }
+                )
             except Exception as exc:
                 await ws.send_json({"type": "error", "ok": False, "op": op, "detail": str(exc)})
 
@@ -843,7 +868,6 @@ async def ws_logs(ws: WebSocket, token: str = ""):
             await ws.close()
         except Exception:
             pass
-
 
 @app.get("/api/accounts")
 def api_accounts(

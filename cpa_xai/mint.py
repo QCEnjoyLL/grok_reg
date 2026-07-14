@@ -50,7 +50,7 @@ def _classify_probe_failure(pr: dict[str, Any]) -> str:
         return f"token ok but models probe failed: status={status}"
     ids = pr.get("model_ids") or []
     return (
-        "token ok but grok-4.5 not listed; models="
+        "token ok but free build model not listed; models="
         + str(ids[:20])
     )
 

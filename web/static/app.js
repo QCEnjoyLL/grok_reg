@@ -377,7 +377,12 @@
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.lines && msg.lines.length) appendLines(msg.lines);
+        if (msg.reset) {
+          const log = document.getElementById("log");
+          if (log) log.textContent = (msg.lines && msg.lines.length) ? msg.lines.join("\n") : "";
+        } else if (msg.lines && msg.lines.length) {
+          appendLines(msg.lines);
+        }
         if (msg.status) setBadge(msg.status);
         // resolve pending command waiters
         if (msg.type === "ack" || msg.type === "error") {
@@ -982,9 +987,26 @@
   connectWs();
   refreshBuild();
   bootstrap();
+  async function pollLogsWhileRunning() {
+    try {
+      const st = await api("/api/status");
+      if (st.job) setBadge(st.job);
+      if (!(st.job && st.job.running)) return;
+      const logs = await api("/api/logs?tail=400");
+      if (!logs.lines) return;
+      const el = document.getElementById("log");
+      if (!el) return;
+      const text = logs.lines.join("\n");
+      if (el.textContent !== text) {
+        el.textContent = text;
+        el.scrollTop = el.scrollHeight;
+      }
+    } catch (_) {}
+  }
   setInterval(() => {
     refreshStatus().catch(() => {});
     refreshAccounts().catch(() => {});
     refreshCpa().catch(() => {});
-  }, 8000);
+    pollLogsWhileRunning().catch(() => {});
+  }, 4000);
 })();

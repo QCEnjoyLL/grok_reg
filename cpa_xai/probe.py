@@ -11,6 +11,26 @@ from .proxyutil import resolve_proxy
 from .schema import DEFAULT_BASE_URL, DEFAULT_CLIENT_HEADERS
 
 
+def _normalize_model_id(mid: str) -> str:
+    return str(mid or "").strip().lower()
+
+
+def _is_free_build_model_id(mid: str) -> bool:
+    m = _normalize_model_id(mid)
+    if not m:
+        return False
+    # free Build channel historically used grok-4.5; current listing may be grok-build
+    if m in {"grok-4.5", "grok-4.5-latest", "grok-build", "grok-build-latest"}:
+        return True
+    if m.startswith("grok-4.5") or m.startswith("grok-build"):
+        return True
+    return False
+
+
+def _is_free_build_model_list(ids: list[Any]) -> bool:
+    return any(_is_free_build_model_id(i) for i in (ids or []))
+
+
 def _opener(proxy: str | None = None) -> urllib.request.OpenerDirector:
     p = resolve_proxy(proxy)
     handlers: list[Any] = []
@@ -43,7 +63,7 @@ def probe_models(
                 "ok": True,
                 "status": getattr(resp, "status", 200),
                 "model_ids": ids,
-                "has_grok_45": any(i == "grok-4.5" for i in ids),
+                "has_grok_45": _is_free_build_model_list(ids),
             }
     except urllib.error.HTTPError as e:
         return {
@@ -73,7 +93,7 @@ def probe_mini_response(
     base = base_url.rstrip("/")
     url = f"{base}/responses"
     payload = {
-        "model": "grok-4.5",
+        "model": "grok-build",
         "stream": False,
         "input": "Reply with exactly MINT_OK",
         "reasoning": {"effort": "low"},
