@@ -34,8 +34,8 @@ if str(APP_HOME) not in sys.path:
 
 MAX_LOG_LINES = 4000
 DASHBOARD_TITLE = os.environ.get("DASHBOARD_TITLE", "Grok Register")
-BUILD_ID = os.environ.get("BUILD_ID", "deadlock-fix-1")
-APP_VERSION = os.environ.get("APP_VERSION", "1.2.0")
+BUILD_ID = os.environ.get("BUILD_ID", "v1.0.0")
+APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
 SETTINGS_FILE = DATA_DIR / "ui_settings.json"
 ENV_BOOT_TOKEN = os.environ.get("WEB_TOKEN", "").strip()
 ENV_BOOT_NOVNC = os.environ.get("NOVNC_PUBLIC_URL", "").strip()
@@ -441,7 +441,7 @@ def _pending_job_worker() -> None:
 
 threading.Thread(target=_pending_job_worker, daemon=True, name="pending-job-worker").start()
 
-app = FastAPI(title=DASHBOARD_TITLE, version="1.1.0")
+app = FastAPI(title=DASHBOARD_TITLE, version="1.0.0")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
 @app.middleware("http")

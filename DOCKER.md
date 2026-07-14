@@ -1,55 +1,56 @@
-# Docker 部署
+# Docker 部署说明
 
-## 一键启动
+镜像：`ghcr.io/qcenjoyll/grok_reg`
+
+推荐标签：`v1.0.0`（正式版）或 `latest`。
+
+## 运行
 
 ```bash
-sudo mkdir -p /media/docker/grok_reg
-docker pull ghcr.io/qcenjoyll/grok_reg:latest
+sudo mkdir -p /opt/grok_reg/data
+
+docker pull ghcr.io/qcenjoyll/grok_reg:v1.0.0
 docker rm -f grok-reg 2>/dev/null || true
+
 docker run -d \
   --name grok-reg \
   --restart unless-stopped \
   --shm-size=1g \
   --cap-add=SYS_ADMIN \
   --security-opt seccomp=unconfined \
-  -e WEB_TOKEN=change-me \
-  -e VNC_PASSWORD=grokreg \
-  -p 8089:8080 -p 6089:6080 \
-  -v /media/docker/grok_reg:/data \
-  ghcr.io/qcenjoyll/grok_reg:latest \
+  -e WEB_TOKEN=请改成强随机串 \
+  -e VNC_PASSWORD=请改成自己的密码 \
+  -p 8080:8080 -p 6080:6080 \
+  -v /opt/grok_reg/data:/data \
+  ghcr.io/qcenjoyll/grok_reg:v1.0.0 \
   web
 ```
 
-| 端口 | 用途 |
-|------|------|
-| 8089 | Web 后台 |
-| 6089 | noVNC (看 Chromium) |
+| 主机端口 | 服务 |
+|----------|------|
+| 8080 | Web 后台 |
+| 6080 | noVNC |
 
-## 后台
+## 首次配置
 
-1. 打开 `http://IP:8089` ， Token `change-me`
-2. 系统设置: noVNC URL = `http://IP:6089/vnc.html?autoconnect=1&resize=scale`
-3. 开始前填这些:
-   - email_provider = `moemail`
-   - moemail_api_key = 你的 Key
-   - proxy = 代理
-4. 开始注册
+1. 打开 `http://<IP>:8080`，使用 `WEB_TOKEN` 登录
+2. 系统设置中填写 noVNC 公网地址（若需远程看浏览器）
+3. 必要配置中填写邮箱渠道、代理、CPA 选项并保存
+4. 启动注册任务
 
-## 命令
+## Compose
+
+```bash
+cp .env.docker.example .env
+# 修改 WEB_TOKEN / VNC_PASSWORD / 端口与镜像标签
+docker compose up -d
+```
+
+## 排障
 
 ```bash
 docker logs -f grok-reg
 docker exec -it grok-reg bash
-docker run --rm -it --shm-size=1g --cap-add=SYS_ADMIN \
-  --security-opt seccomp=unconfined \
-  -e DISPLAY=:99 -e DATA_DIR=/data \
-  -v /media/docker/grok_reg:/data \
-  ghcr.io/qcenjoyll/grok_reg:latest \
-  register --extra 1 --threads 1
 ```
 
-## GHCR
-
-仓库 Actions 自动构建: `ghcr.io/qcenjoyll/grok_reg:latest`
-
-私有包需 `docker login ghcr.io`
+更多说明见 [README.md](./README.md)。
