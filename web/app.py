@@ -912,34 +912,86 @@ def api_cpa(
     request: Request,
     limit: int = Query(20, ge=1, le=2000),
     offset: int = Query(0, ge=0),
+    status: str = Query("all"),
+    q: str = Query(""),
 ):
+    """List local CPA auth files with CPAMC upload status + filters.
+
+    status: all | uploaded | pending
+    q: email / filename keyword
+    """
     require_auth(request)
     d = resolve_cpa_dir()
     files = []
     if d.is_dir():
         files = sorted(d.glob("xai-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    total = len(files)
-    items = []
-    for f in files[offset : offset + limit]:
+
+    # local upload ledger written after successful management upload
+    upload_state: dict = {}
+    state_path = d / ".upload_state.json"
+    if state_path.is_file():
+        try:
+            raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(raw_state, dict):
+                upload_state = raw_state
+        except Exception:
+            upload_state = {}
+
+    status_key = str(status or "all").strip().lower()
+    if status_key in ("yes", "true", "1", "ok", "done"):
+        status_key = "uploaded"
+    if status_key in ("no", "false", "0", "missing", "not_uploaded", "unuploaded"):
+        status_key = "pending"
+    if status_key not in ("all", "uploaded", "pending"):
+        status_key = "all"
+    query = str(q or "").strip().lower()
+
+    items_all = []
+    uploaded_count = 0
+    pending_count = 0
+    for f in files:
         email = f.name[len("xai-") : -len(".json")] if f.name.startswith("xai-") else f.stem
-        items.append(
-            {
-                "file": f.name,
-                "email": email,
-                "size": f.stat().st_size,
-                "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
-            }
-        )
+        st = upload_state.get(f.name) if isinstance(upload_state.get(f.name), dict) else {}
+        uploaded = bool(st.get("uploaded"))
+        if uploaded:
+            uploaded_count += 1
+        else:
+            pending_count += 1
+        row = {
+            "file": f.name,
+            "email": email,
+            "size": f.stat().st_size,
+            "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
+            "uploaded": uploaded,
+            "upload_status": "uploaded" if uploaded else "pending",
+            "uploaded_at": st.get("at") or "",
+            "upload_detail": st.get("detail") or "",
+        }
+        if status_key == "uploaded" and not uploaded:
+            continue
+        if status_key == "pending" and uploaded:
+            continue
+        if query and query not in email.lower() and query not in f.name.lower():
+            continue
+        items_all.append(row)
+
+    total = len(items_all)
+    page_items = items_all[offset : offset + limit]
     page = (offset // limit) + 1 if limit else 1
     pages = max(1, (total + limit - 1) // limit) if limit else 1
     return {
         "dir": str(d),
         "total": total,
+        "total_all": len(files),
+        "uploaded_count": uploaded_count,
+        "pending_count": pending_count,
         "limit": limit,
         "offset": offset,
         "page": page,
         "pages": pages,
-        "items": items,
+        "status": status_key,
+        "q": q,
+        "items": page_items,
     }
 
 

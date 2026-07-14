@@ -40,6 +40,54 @@ def resolve_cpa_proxy(cfg: dict) -> str:
     ).strip()
 
 
+
+def _upload_state_path(auth_dir: str | Path | None = None) -> Path:
+    base = Path(auth_dir).expanduser() if auth_dir else _DEFAULT_OUT
+    if not base.is_absolute():
+        base = (_REG_DIR / base).resolve()
+    return base / ".upload_state.json"
+
+
+def load_cpa_upload_state(auth_dir: str | Path | None = None) -> dict:
+    path = _upload_state_path(auth_dir)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def mark_cpa_uploaded(
+    auth_path: str | Path,
+    *,
+    ok: bool = True,
+    detail: str = "",
+    auth_dir: str | Path | None = None,
+) -> None:
+    """Persist local CPAMC upload status next to cpa auth files."""
+    src = Path(auth_path)
+    state_dir = Path(auth_dir).expanduser() if auth_dir else src.parent
+    if not state_dir.is_absolute():
+        state_dir = (_REG_DIR / state_dir).resolve()
+    state_path = state_dir / ".upload_state.json"
+    state = load_cpa_upload_state(state_dir)
+    key = src.name
+    from datetime import datetime, timezone
+
+    state[key] = {
+        "uploaded": bool(ok),
+        "file": key,
+        "at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "detail": str(detail or "")[:300],
+    }
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
 def upload_cpa_auth_file(
     auth_path: str | Path,
     config: dict,
@@ -89,6 +137,7 @@ def upload_cpa_auth_file(
     except json.JSONDecodeError:
         payload = {"response": raw[:300]}
     log(f"[cpa] management upload -> {base} ({src.name})")
+    mark_cpa_uploaded(src, ok=True, detail=f"status={status}", auth_dir=src.parent)
     return {"ok": True, "status": status, "response": payload}
 
 
@@ -270,6 +319,10 @@ def export_cpa_xai_for_account(
         except Exception as e:  # noqa: BLE001
             log(f"[cpa] management upload failed: {e}")
             result["cpa_management_upload_error"] = str(e)
+            try:
+                mark_cpa_uploaded(result.get("path") or "", ok=False, detail=str(e))
+            except Exception:
+                pass
 
     # failure log under register dir
     if not result.get("ok"):

@@ -343,6 +343,21 @@
             <button type="button" id="btn-refresh-cpa" class="btn ghost sm">刷新</button>
           </div>
         </div>
+        <div class="filter-bar" id="cpa-filter-bar">
+          <label class="filter-item">
+            <span class="filter-label">上传状态</span>
+            <select id="cpa-filter-status">
+              <option value="all" selected>全部</option>
+              <option value="uploaded">已上传 CPAMC</option>
+              <option value="pending">未上传</option>
+            </select>
+          </label>
+          <label class="filter-item filter-grow">
+            <span class="filter-label">搜索邮箱/文件名</span>
+            <input type="text" id="cpa-filter-q" placeholder="例如 temps.cc.cd 或 xai-..." />
+          </label>
+          <div class="filter-stats" id="cpa-filter-stats">-</div>
+        </div>
         <div id="cpa-table" class="table-wrap">加载中...</div>
         <div class="pager" id="cpa-pager" data-kind="cpa">
           <div class="pager-left">

@@ -267,7 +267,7 @@
   const PAGE_SIZES = [5, 10, 20, 50, 100, 500];
   const listState = {
     accounts: { page: 1, pageSize: 10, total: 0, pages: 1 },
-    cpa: { page: 1, pageSize: 10, total: 0, pages: 1 },
+    cpa: { page: 1, pageSize: 10, total: 0, pages: 1, filterStatus: "all", filterQ: "" },
   };
   function loadPageSize(key, fallback) {
     try {
@@ -322,30 +322,70 @@
       <tbody>${rows}</tbody>
     </table>`;
   }
-  async function refreshCpa() {
+    async function refreshCpa() {
     const st = listState.cpa;
     const limit = st.pageSize;
     const offset = (st.page - 1) * limit;
-    const data = await api("/api/cpa?limit=" + limit + "&offset=" + offset);
+    const statusEl = document.getElementById("cpa-filter-status");
+    const qEl = document.getElementById("cpa-filter-q");
+    if (statusEl) st.filterStatus = statusEl.value || "all";
+    if (qEl) st.filterQ = String(qEl.value || "").trim();
+    const qs = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      status: st.filterStatus || "all",
+      q: st.filterQ || "",
+    });
+    const data = await api("/api/cpa?" + qs.toString());
     const box = document.getElementById("cpa-table");
     updatePagerUI("cpa", data);
+    const stats = document.getElementById("cpa-filter-stats");
+    if (stats) {
+      const all = data.total_all != null ? data.total_all : data.total;
+      const up = data.uploaded_count != null ? data.uploaded_count : "-";
+      const pe = data.pending_count != null ? data.pending_count : "-";
+      stats.textContent = "共 " + all + " · 已上传 " + up + " · 未上传 " + pe + " · 筛选 " + (data.total || 0);
+    }
     if (!data.items || !data.items.length) {
-      box.innerHTML = "<p class='hint'>" + esc(__S.no_cpa) + "</p>";
+      box.innerHTML = "<p class='hint'>" + esc(__S.no_cpa || "暂无 CPA 文件") + "</p>";
       return;
     }
     const rows = data.items.map((r) => {
       const file = r.file || ("xai-" + (r.email || "") + ".json");
       const href = withToken("/api/download/cpa/" + encodeURIComponent(file));
+      const uploaded = !!r.uploaded;
+      const badge = uploaded
+        ? '<span class="badge-up yes">已上传</span>'
+        : '<span class="badge-up no">未上传</span>';
+      const upAt = uploaded ? esc(r.uploaded_at || "-") : "-";
       return `<tr>
         <td>${esc(r.email)}</td>
+        <td class="col-upload">${badge}</td>
+        <td class="col-upload-at">${upAt}</td>
         <td>${esc(r.mtime)}</td>
         <td>${r.size}</td>
         <td class="col-act"><a class="btn ghost sm" href="${href}" download="${esc(file)}">下载</a></td>
       </tr>`;
     }).join("");
     box.innerHTML = `<table>
-      <colgroup><col class="col-email"><col class="col-mtime"><col class="col-size"><col class="col-act"></colgroup>
-      <thead><tr><th>${esc(__S.email)}</th><th>mtime</th><th>size</th><th class="col-act"></th></tr></thead>
+      <colgroup>
+        <col class="col-email">
+        <col class="col-upload">
+        <col class="col-upload-at">
+        <col class="col-mtime">
+        <col class="col-size">
+        <col class="col-act">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>${esc(__S.email || "邮箱")}</th>
+          <th>CPAMC</th>
+          <th>上传时间</th>
+          <th>mtime</th>
+          <th>size</th>
+          <th class="col-act"></th>
+        </tr>
+      </thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
@@ -794,6 +834,28 @@
       if (btn) btn.disabled = false;
     }
   });
+
+  function bindCpaFilters() {
+    const statusEl = document.getElementById("cpa-filter-status");
+    const qEl = document.getElementById("cpa-filter-q");
+    let timer = null;
+    const run = () => {
+      listState.cpa.page = 1;
+      refreshCpa().catch((e) => toast(String(e.message || e)));
+    };
+    statusEl?.addEventListener("change", run);
+    qEl?.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(run, 280);
+    });
+    qEl?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        clearTimeout(timer);
+        run();
+      }
+    });
+  }
+  bindCpaFilters();
 
   document.getElementById("btn-refresh-cpa")?.addEventListener("click", () => {
     refreshCpa().catch((e) => toast(String(e.message || e)));

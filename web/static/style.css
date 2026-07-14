@@ -548,3 +548,63 @@ label.check-card input[type="checkbox"] {
   .quick-grid.task-grid { grid-template-columns: 1fr; }
   .quick-grid.task-grid > label.field-full { grid-column: auto; }
 }
+
+
+/* CPA list filters */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: end;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.02);
+}
+.filter-item {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.filter-item.filter-grow { flex: 1 1 220px; min-width: 200px; }
+.filter-label { color: var(--muted); font-size: 0.78rem; }
+.filter-item select,
+.filter-item input[type="text"] {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #0c1428;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.filter-stats {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+.badge-up {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.badge-up.yes {
+  color: #04140d;
+  background: rgba(62, 207, 142, 0.9);
+}
+.badge-up.no {
+  color: #ffd7a8;
+  background: rgba(255, 170, 70, 0.14);
+  border-color: rgba(255, 170, 70, 0.35);
+}
+.col-upload { width: 120px; }
+.col-upload-at { width: 170px; }
