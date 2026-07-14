@@ -323,14 +323,37 @@
       box.innerHTML = "<p class='hint'>" + esc(__S.no_accounts) + "</p>";
       return;
     }
-    const rows = data.items.map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.password)}</td><td>${r.has_sso ? esc(r.sso_preview || "有") : "-"}</td></tr>`).join("");
-    box.innerHTML = `<table>
-      <colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"></colgroup>
-      <thead><tr><th>${esc(__S.email)}</th><th>${esc(__S.password)}</th><th>SSO</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    const rows = data.items.map((r) => {
+      const pass = String(r.password || "");
+      const masked = pass ? "•".repeat(Math.min(Math.max(pass.length, 8), 24)) : "-";
+      const passCell = pass
+        ? (
+          '<span class="secret-cell">' +
+            '<code class="secret-text" data-secret="' + esc(pass) + '" data-shown="0">' + masked + '</code>' +
+            '<button type="button" class="btn-eye" title="显示密码" aria-label="显示或隐藏密码">👁</button>' +
+          '</span>'
+        )
+        : "-";
+      return (
+        "<tr>" +
+        '<td class="col-email" title="' + esc(r.email || "") + '">' + esc(r.email || "") + "</td>" +
+        '<td class="col-pass">' + passCell + "</td>" +
+        "<td>" + (r.has_sso ? esc(r.sso_preview || "有") : "-") + "</td>" +
+        "</tr>"
+      );
+    }).join("");
+    box.innerHTML =
+      "<table>" +
+      '<colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"></colgroup>' +
+      "<thead><tr>" +
+      "<th>" + esc(__S.email || "邮箱") + "</th>" +
+      "<th>" + esc(__S.password || "密码") + "</th>" +
+      "<th>SSO</th>" +
+      "</tr></thead>" +
+      "<tbody>" + rows + "</tbody>" +
+      "</table>";
   }
-    async function refreshCpa() {
+  async function refreshCpa() {
     const st = listState.cpa;
     const limit = st.pageSize;
     const offset = (st.page - 1) * limit;
@@ -852,6 +875,36 @@
       if (btn) btn.disabled = false;
     }
   });
+
+    function bindAccountsSecrets() {
+    const box = document.getElementById("accounts-table");
+    if (!box || box.dataset.secretBound === "1") return;
+    box.dataset.secretBound = "1";
+    box.addEventListener("click", (ev) => {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      const btn = t.closest(".btn-eye");
+      if (!btn || !box.contains(btn)) return;
+      const cell = btn.closest(".secret-cell");
+      const text = cell && cell.querySelector(".secret-text");
+      if (!text) return;
+      const secret = text.getAttribute("data-secret") || "";
+      const shown = text.getAttribute("data-shown") === "1";
+      if (shown) {
+        const masked = secret ? "•".repeat(Math.min(Math.max(secret.length, 8), 24)) : "-";
+        text.textContent = masked;
+        text.setAttribute("data-shown", "0");
+        btn.classList.remove("is-on");
+        btn.setAttribute("title", "显示密码");
+      } else {
+        text.textContent = secret;
+        text.setAttribute("data-shown", "1");
+        btn.classList.add("is-on");
+        btn.setAttribute("title", "隐藏密码");
+      }
+    });
+  }
+  bindAccountsSecrets();
 
   function bindCpaFilters() {
     const statusEl = document.getElementById("cpa-filter-status");
