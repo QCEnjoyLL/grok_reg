@@ -74,8 +74,8 @@
           <button id="btn-save-quick" class="btn primary sm" type="button">保存并检查</button>
         </div>
         <p class="hint" id="quick-mail-hint">选择邮箱渠道后，下方只显示该渠道需要的配置项。</p>
-        <form id="form-quick" class="form">
-          <div class="quick-grid">
+                <form id="form-quick" class="form">
+          <div class="quick-grid mail-grid">
             <label>
               <span class="field-title"><span class="field-name">邮箱渠道</span><code class="field-key">email_provider</code></span>
               <select id="q-email_provider">
@@ -95,12 +95,12 @@
               <span class="field-title"><span class="field-name">MoeMail 密钥</span><code class="field-key">moemail_api_key</code></span>
               <input type="password" id="q-moemail_api_key" placeholder="X-API-Key" autocomplete="off" />
             </label>
-            <label class="field-full" data-mail="moemail">
+            <label data-mail="moemail">
               <span class="field-title"><span class="field-name">MoeMail 接口地址</span><code class="field-key">moemail_api_base</code></span>
               <input type="text" id="q-moemail_api_base" placeholder="https://mail.nloln.cn" />
             </label>
 
-            <label class="field-full" data-mail="cloudflare">
+            <label data-mail="cloudflare">
               <span class="field-title"><span class="field-name">临时邮箱接口地址</span><code class="field-key">cloudflare_api_base</code></span>
               <input type="text" id="q-cloudflare_api_base" placeholder="https://xxx.workers.dev" />
             </label>
@@ -120,7 +120,7 @@
               </select>
             </label>
 
-            <label class="field-full" data-mail="cloudmail">
+            <label data-mail="cloudmail">
               <span class="field-title"><span class="field-name">CloudMail 地址</span><code class="field-key">cloudmail_url</code></span>
               <input type="text" id="q-cloudmail_url" placeholder="https://mail.example.com" />
             </label>

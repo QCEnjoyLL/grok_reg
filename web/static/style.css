@@ -468,6 +468,9 @@ label .field-key + select {
 
 /* provider-specific config fields */
 [data-mail][hidden] { display: none !important; }
+.mail-grid > [hidden],
+.mail-grid > label[hidden],
+.mail-grid > details[hidden] { display: none !important; }
 
 
 /* CPA 8 fields: force equal 4x2 grid */
@@ -483,4 +486,20 @@ label .field-key + select {
 }
 @media (max-width: 900px) {
   .quick-grid.cpa-grid { grid-template-columns: 1fr; }
+}
+
+
+/* 邮箱区：两列对齐；奇数项自然单独占最后一行左侧 */
+.quick-grid.mail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.quick-grid.mail-grid > label {
+  min-width: 0;
+}
+.quick-grid.mail-grid > label.field-full {
+  grid-column: auto; /* 不再通栏，统一两列节奏 */
+}
+@media (max-width: 900px) {
+  .quick-grid.mail-grid { grid-template-columns: 1fr; }
 }
