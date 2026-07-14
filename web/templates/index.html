@@ -76,7 +76,8 @@
         <p class="hint" id="quick-mail-hint">选择邮箱渠道后，下方只显示该渠道需要的配置项。</p>
         <form id="form-quick" class="form">
           <div class="quick-grid">
-            <label>邮箱渠道 <code>email_provider</code>
+            <label>
+              <span class="field-title"><span class="field-name">邮箱渠道</span><code class="field-key">email_provider</code></span>
               <select id="q-email_provider">
                 <option value="moemail" selected>moemail</option>
                 <option value="cloudflare">cloudflare</option>
@@ -85,24 +86,30 @@
                 <option value="yyds">yyds</option>
               </select>
             </label>
-            <label>代理地址 <code>proxy</code>
+            <label>
+              <span class="field-title"><span class="field-name">代理地址</span><code class="field-key">proxy</code></span>
               <input type="text" id="q-proxy" placeholder="http://用户:密码@主机:端口" />
             </label>
 
-            <label data-mail="moemail">MoeMail 密钥 <code>moemail_api_key</code>
+            <label data-mail="moemail">
+              <span class="field-title"><span class="field-name">MoeMail 密钥</span><code class="field-key">moemail_api_key</code></span>
               <input type="password" id="q-moemail_api_key" placeholder="X-API-Key" autocomplete="off" />
             </label>
-            <label class="field-full" data-mail="moemail">MoeMail 接口地址 <code>moemail_api_base</code>
+            <label class="field-full" data-mail="moemail">
+              <span class="field-title"><span class="field-name">MoeMail 接口地址</span><code class="field-key">moemail_api_base</code></span>
               <input type="text" id="q-moemail_api_base" placeholder="https://mail.nloln.cn" />
             </label>
 
-            <label class="field-full" data-mail="cloudflare">临时邮箱接口地址 <code>cloudflare_api_base</code>
+            <label class="field-full" data-mail="cloudflare">
+              <span class="field-title"><span class="field-name">临时邮箱接口地址</span><code class="field-key">cloudflare_api_base</code></span>
               <input type="text" id="q-cloudflare_api_base" placeholder="https://xxx.workers.dev" />
             </label>
-            <label data-mail="cloudflare">临时邮箱管理密钥 <code>cloudflare_api_key</code>
+            <label data-mail="cloudflare">
+              <span class="field-title"><span class="field-name">临时邮箱管理密钥</span><code class="field-key">cloudflare_api_key</code></span>
               <input type="password" id="q-cloudflare_api_key" placeholder="管理密码或 API Key" autocomplete="off" />
             </label>
-            <label data-mail="cloudflare">鉴权方式 <code>cloudflare_auth_mode</code>
+            <label data-mail="cloudflare">
+              <span class="field-title"><span class="field-name">鉴权方式</span><code class="field-key">cloudflare_auth_mode</code></span>
               <select id="q-cloudflare_auth_mode">
                 <option value="x-admin-auth">x-admin-auth</option>
                 <option value="bearer">bearer</option>
@@ -113,28 +120,35 @@
               </select>
             </label>
 
-            <label class="field-full" data-mail="cloudmail">CloudMail 地址 <code>cloudmail_url</code>
+            <label class="field-full" data-mail="cloudmail">
+              <span class="field-title"><span class="field-name">CloudMail 地址</span><code class="field-key">cloudmail_url</code></span>
               <input type="text" id="q-cloudmail_url" placeholder="https://mail.example.com" />
             </label>
-            <label data-mail="cloudmail">CloudMail 管理员邮箱 <code>cloudmail_admin_email</code>
+            <label data-mail="cloudmail">
+              <span class="field-title"><span class="field-name">CloudMail 管理员邮箱</span><code class="field-key">cloudmail_admin_email</code></span>
               <input type="text" id="q-cloudmail_admin_email" placeholder="admin@example.com" />
             </label>
-            <label data-mail="cloudmail">CloudMail 密码 <code>cloudmail_password</code>
+            <label data-mail="cloudmail">
+              <span class="field-title"><span class="field-name">CloudMail 密码</span><code class="field-key">cloudmail_password</code></span>
               <input type="password" id="q-cloudmail_password" autocomplete="off" />
             </label>
 
-            <label data-mail="duckmail">DuckMail 密钥 <code>duckmail_api_key</code>
+            <label data-mail="duckmail">
+              <span class="field-title"><span class="field-name">DuckMail 密钥</span><code class="field-key">duckmail_api_key</code></span>
               <input type="password" id="q-duckmail_api_key" placeholder="DuckMail API Key" autocomplete="off" />
             </label>
 
-            <label data-mail="yyds">YYDS 密钥 <code>yyds_api_key</code>
+            <label data-mail="yyds">
+              <span class="field-title"><span class="field-name">YYDS 密钥</span><code class="field-key">yyds_api_key</code></span>
               <input type="password" id="q-yyds_api_key" placeholder="yyds_api_key" autocomplete="off" />
             </label>
-            <label data-mail="yyds">YYDS JWT <code>yyds_jwt</code>
+            <label data-mail="yyds">
+              <span class="field-title"><span class="field-name">YYDS JWT</span><code class="field-key">yyds_jwt</code></span>
               <input type="password" id="q-yyds_jwt" placeholder="yyds_jwt" autocomplete="off" />
             </label>
 
-            <label data-mail="moemail,cloudflare,cloudmail" id="label-defaultDomains"><span id="defaultDomains-title">邮箱域名（可选）</span> <code>defaultDomains</code>
+            <label data-mail="moemail,cloudflare,cloudmail" id="label-defaultDomains">
+              <span class="field-title"><span class="field-name" id="defaultDomains-title">邮箱域名（可选）</span><code class="field-key">defaultDomains</code></span>
               <input type="text" id="q-defaultDomains" placeholder="example.com" />
             </label>
           </div>
@@ -168,45 +182,37 @@
         <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。</p>
         <form id="form-cpa" class="form">
           <div class="quick-grid">
-            <label>是否生成 CPA 认证文件（Grok 4.5 用）
-              <span class="field-key">cpa_export_enabled</span>
+            <label><span class="field-title"><span class="field-name">是否生成 CPA 认证文件</span><code class="field-key">cpa_export_enabled</code></span>
               <select id="q-cpa_export_enabled">
                 <option value="true" selected>true (开)</option>
                 <option value="false">false (关)</option>
               </select>
             </label>
-            <label>无头浏览器
-              <span class="field-key">cpa_headless</span>
+            <label><span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">cpa_headless</code></span>
               <select id="q-cpa_headless">
                 <option value="false" selected>false (有头，推荐)</option>
                 <option value="true">true (无头，不推荐)</option>
               </select>
             </label>
-            <label class="field-full">免费 Grok 4.5 API 地址
-              <span class="field-key">cpa_base_url</span>
+            <label class="field-full"><span class="field-title"><span class="field-name">免费 Grok 4.5 API 地址</span><code class="field-key">cpa_base_url</code></span>
               <input type="text" id="q-cpa_base_url" placeholder="https://cli-chat-proxy.grok.com/v1" />
             </label>
-            <label>CPA / OIDC 专用代理
-              <span class="field-key">cpa_proxy</span>
+            <label><span class="field-title"><span class="field-name">CPA / OIDC 专用代理</span><code class="field-key">cpa_proxy</code></span>
               <input type="text" id="q-cpa_proxy" placeholder="direct / 空则跟注册 proxy" />
             </label>
-            <label>认证文件目录
-              <span class="field-key">cpa_auth_dir</span>
+            <label><span class="field-title"><span class="field-name">认证文件目录</span><code class="field-key">cpa_auth_dir</code></span>
               <input type="text" id="q-cpa_auth_dir" placeholder="./cpa_auths" />
             </label>
-            <label>自动上传到 CPA 管理接口
-              <span class="field-key">cpa_management_upload_enabled</span>
+            <label><span class="field-title"><span class="field-name">自动上传到 CPA 管理接口</span><code class="field-key">cpa_management_upload_enabled</code></span>
               <select id="q-cpa_management_upload_enabled">
                 <option value="false" selected>false (关)</option>
                 <option value="true">true (开)</option>
               </select>
             </label>
-            <label>CPA 管理地址
-              <span class="field-key">cpa_management_base</span>
+            <label><span class="field-title"><span class="field-name">CPA 管理地址</span><code class="field-key">cpa_management_base</code></span>
               <input type="text" id="q-cpa_management_base" placeholder="http://192.168.x.x:8317" />
             </label>
-            <label>CPA 管理密码
-              <span class="field-key">cpa_management_key</span>
+            <label><span class="field-title"><span class="field-name">CPA 管理密码</span><code class="field-key">cpa_management_key</code></span>
               <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
           </div>
