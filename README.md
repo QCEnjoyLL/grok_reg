@@ -164,14 +164,6 @@ uv run python -u scripts/backfill_cpa_xai_from_accounts.py --limit 10
 | `latest` | 默认跟随最新构建 |
 | `sha-*` | 提交级追溯 |
 
-**发布约定（后续更新）**
-
-- 小修复 / 文案 / 样式：补丁号 `v1.0.x`
-- 功能增强 / 多模块改动：次版本 `v1.x.0`
-- 破坏性变更 / 重大架构：主版本 `vX.0.0`
-
-推送符合 `v*` 的 Git 标签会触发 GHCR 镜像构建。
-
 ```bash
 docker pull ghcr.io/qcenjoyll/grok_reg:v1.0.0
 # 或
@@ -221,7 +213,3 @@ grok_reg/
 ## 📄 许可与声明
 
 本项目按仓库内许可条款使用。作者不对滥用、封号或数据丢失承担责任。请自行做好备份与密钥管理。
-
----
-
-**Grok Register v1.0.0** · 祝部署顺利 🎉
