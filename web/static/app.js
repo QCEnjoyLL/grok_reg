@@ -930,6 +930,61 @@
     }
   });
 
+  document.getElementById("btn-cleanup-cpa-logs")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-cleanup-cpa-logs");
+    let preview = null;
+    try {
+      preview = await api("/api/cpa/logs");
+    } catch (e) {
+      toast("读取日志列表失败: " + (e.message || e), "err");
+      return;
+    }
+    const items = (preview && preview.items) || [];
+    if (!items.length) {
+      toast("没有可清理的日志文件", "ok");
+      return;
+    }
+    const names = items.map((x) => x.file + " (" + (x.size || 0) + "B)").join("\n");
+    const ok = confirm(
+      "确认清理 cpa_auths 运行时日志？\n\n将删除：\n" +
+      names +
+      "\n\n默认保留 .upload_state.json（上传状态账本）。\n不会删除任何 xai-*.json 凭证文件。"
+    );
+    if (!ok) return;
+    const hasState = items.some((x) => x.file === ".upload_state.json");
+    let includeUploadState = false;
+    if (hasState) {
+      includeUploadState = confirm(
+        "是否同时删除 .upload_state.json（上传状态账本）？\n\n" +
+        "点「确定」= 一起删除（后台会显示为未上传）\n" +
+        "点「取消」= 仅清理日志，保留上传状态"
+      );
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.dataset.prev = btn.textContent;
+      btn.textContent = "清理中...";
+    }
+    try {
+      toast("[ui] 正在清理 CPA 日志...");
+      const res = await api("/api/cpa/cleanup-logs", {
+        method: "POST",
+        body: JSON.stringify({ include_upload_state: !!includeUploadState }),
+        timeoutMs: 60000,
+      });
+      toast(res.message || ("已清理 " + (res.deleted_count || 0) + " 个文件"), "ok");
+      await Promise.all([refreshCpa().catch(() => {}), refreshStatus().catch(() => {})]);
+    } catch (err) {
+      toast("清理日志失败: " + (err.message || err), "err");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.prev || "清理日志";
+      }
+    }
+  });
+
+
   function bindAccountsSecrets() {
     const box = document.getElementById("accounts-table");
     if (!box || box.dataset.secretBound === "1") return;

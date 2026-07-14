@@ -356,6 +356,88 @@ def archive_cpa_files() -> dict[str, Any]:
     }
 
 
+
+def list_cpa_log_files(cpa_dir: Path | None = None) -> list[dict[str, Any]]:
+    """List non-credential runtime log/state files under cpa_auths."""
+    d = cpa_dir or resolve_cpa_dir()
+    items: list[dict[str, Any]] = []
+    if not d.is_dir():
+        return items
+
+    candidates: list[Path] = []
+    for name in (".upload_state.json", "backfill_failed.jsonl", "cpa_auth_failed.txt"):
+        p = d / name
+        if p.is_file():
+            candidates.append(p)
+    candidates.extend(sorted(d.glob("backfill_summary_*.json")))
+
+    seen: set[str] = set()
+    for p in candidates:
+        key = p.name
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            st = p.stat()
+            kind = "upload_state" if key == ".upload_state.json" else "log"
+            items.append(
+                {
+                    "file": key,
+                    "kind": kind,
+                    "size": st.st_size,
+                    "mtime": _fmt_beijing(st.st_mtime),
+                    "mtime_ts": st.st_mtime,
+                }
+            )
+        except OSError:
+            continue
+    return items
+
+
+def cleanup_cpa_log_files(*, include_upload_state: bool = False) -> dict[str, Any]:
+    """Delete runtime logs under cpa_auths. Never deletes xai-*.json credentials."""
+    d = resolve_cpa_dir()
+    deleted: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    for item in list_cpa_log_files(d):
+        name = item["file"]
+        kind = item.get("kind") or "log"
+        if kind == "upload_state" and not include_upload_state:
+            skipped.append({"file": name, "reason": "upload_state 默认保留，需勾选后删除"})
+            continue
+        path = d / name
+        if name.startswith("xai-") and name.endswith(".json"):
+            skipped.append({"file": name, "reason": "凭证文件不可删除"})
+            continue
+        try:
+            if path.is_file():
+                size = path.stat().st_size
+                path.unlink()
+                deleted.append({"file": name, "size": size, "kind": kind})
+        except Exception as e:
+            errors.append({"file": name, "error": str(e)})
+
+    return {
+        "ok": not errors,
+        "dir": str(d),
+        "include_upload_state": bool(include_upload_state),
+        "deleted_count": len(deleted),
+        "skipped_count": len(skipped),
+        "error_count": len(errors),
+        "deleted": deleted,
+        "skipped": skipped,
+        "errors": errors,
+        "remaining": list_cpa_log_files(d),
+        "message": (
+            f"已清理 {len(deleted)} 个日志文件"
+            + (f"，跳过 {len(skipped)} 个" if skipped else "")
+            + (f"，失败 {len(errors)} 个" if errors else "")
+        ),
+    }
+
+
 def load_config_dict() -> dict[str, Any]:
     path = resolve_config_path()
     if not path.is_file():
@@ -1686,6 +1768,45 @@ def api_archive_status(request: Request):
         "latest_accounts": a_files[0].name if a_files else "",
         "latest_cpa_batch": c_batches[0].name if c_batches else "",
     }
+
+
+
+class CpaCleanupLogsBody(BaseModel):
+    include_upload_state: bool = False
+
+
+@app.get("/api/cpa/logs")
+def api_cpa_logs(request: Request):
+    """List cleanup-able runtime logs under cpa_auths (not xai credentials)."""
+    require_auth(request)
+    d = resolve_cpa_dir()
+    items = list_cpa_log_files(d)
+    total_size = sum(int(x.get("size") or 0) for x in items)
+    return {
+        "dir": str(d),
+        "total": len(items),
+        "total_size": total_size,
+        "items": items,
+    }
+
+
+@app.post("/api/cpa/cleanup-logs")
+def api_cpa_cleanup_logs(request: Request, body: CpaCleanupLogsBody | None = None):
+    """Delete backfill/mint runtime logs. Optional reset of .upload_state.json."""
+    require_auth(request)
+    body = body or CpaCleanupLogsBody()
+    if jobs.is_running():
+        raise HTTPException(409, "有任务正在运行，请先停止后再清理日志")
+    try:
+        result = cleanup_cpa_log_files(include_upload_state=bool(body.include_upload_state))
+    except Exception as e:
+        raise HTTPException(500, f"清理 CPA 日志失败: {e}") from e
+    jobs.append_log(
+        f"[cleanup] cpa logs deleted={result.get('deleted_count')} "
+        f"upload_state={bool(body.include_upload_state)}"
+    )
+    return result
+
 
 
 @app.get("/api/download/accounts-archive")
