@@ -141,19 +141,101 @@ h1 { margin: 0; font-size: 1.25rem; }
 .form .check { display: flex; align-items: center; gap: 8px; color: var(--text); min-height: auto; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .btn {
-  border: 1px solid var(--line); background: #162241; color: var(--text);
-  border-radius: 12px; padding: 11px 16px; cursor: pointer; text-decoration: none;
-  font-size: 0.92rem; display: inline-flex; align-items: center; justify-content: center;
-  min-height: 42px;
+  border: 1px solid var(--line);
+  background: #162241;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  transition: filter .12s ease, border-color .12s ease, background .12s ease;
 }
 .btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; filter: none; }
 .btn.primary {
   background: linear-gradient(135deg, #3b6ef5, #2aa8a0);
-  border: none; color: white; font-weight: 600;
+  border: none;
+  color: white;
+  font-weight: 600;
 }
 .btn.danger { background: #3a1520; border-color: #6a2434; color: #ffb4bd; }
 .btn.ghost { background: transparent; }
-.btn.sm { padding: 6px 10px; font-size: 0.8rem; min-height: 34px; }
+/* toolbar / compact controls — same visual language, slightly tighter */
+.btn.sm {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  min-height: 34px;
+  border-radius: 10px;
+}
+/* card footer primary actions */
+.form-actions .btn.primary,
+.card-actions.form-actions .btn.primary {
+  min-width: 120px;
+  min-height: 38px;
+  padding: 8px 18px;
+  font-size: 0.88rem;
+}
+
+/* Save / primary form actions: bottom-right habit */
+.card-actions.form-actions,
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.form-actions .btn + .btn { margin-left: 0; }
+
+/* toolbar button groups in card heads */
+.card-head .row {
+  gap: 8px;
+}
+.card-head .btn,
+.card-head a.btn {
+  /* unify toolbar controls */
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+/* top actions */
+.top-actions .btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+/* pager buttons same as toolbar */
+.pager .btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+/* primary in toolbars stays same height as sibling ghost buttons */
+.card-head .btn.primary,
+.top-actions .btn.primary {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+
 .badge {
   padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; border: 1px solid var(--line);
 }

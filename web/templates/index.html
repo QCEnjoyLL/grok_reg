@@ -64,7 +64,7 @@
             </div>
           </label>
           <p class="hint">解析结果：<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
-          <div class="row card-actions">
+          <div class="row card-actions form-actions">
             <button type="submit" class="btn primary">保存设置</button>
           </div>
         </form>
@@ -73,7 +73,6 @@
       <div class="card wide">
         <div class="card-head">
           <h2>开始前填这些</h2>
-          <button id="btn-save-quick" class="btn primary sm" type="button">保存并检查</button>
         </div>
         <p class="hint" id="quick-mail-hint">选择邮箱渠道后，下方只显示该渠道需要的配置项。</p>
                 <form id="form-quick" class="form">
@@ -172,6 +171,10 @@
               </label>
             </div>
           </details>
+        
+          <div class="row card-actions form-actions">
+            <button id="btn-save-quick" class="btn primary" type="button">保存并检查</button>
+          </div>
         </form>
       </div>
 
@@ -179,7 +182,6 @@
             <div class="card wide">
         <div class="card-head">
           <h2>CPA / Grok 4.5 配置</h2>
-          <button id="btn-save-cpa" class="btn primary sm" type="button">保存 CPA</button>
         </div>
         <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。</p>
                 <form id="form-cpa" class="form">
@@ -226,6 +228,10 @@
               <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
           </div>
+        
+          <div class="row card-actions form-actions">
+            <button id="btn-save-cpa" class="btn primary" type="button">保存 CPA</button>
+          </div>
         </form>
       </div>
 
@@ -253,7 +259,7 @@
               <span class="check-inline"><input type="checkbox" name="fast" checked /> 开启后缩短等待</span>
             </label>
           </div>
-          <div class="row card-actions">
+          <div class="row card-actions form-actions">
             <button type="submit" class="btn primary">开始注册</button>
             <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
             <button type="button" id="btn-stop" class="btn danger">停止</button>
@@ -289,7 +295,7 @@
               <span class="check-inline"><input type="checkbox" name="headless" /> 不推荐（Docker 建议有头）</span>
             </label>
           </div>
-          <div class="row card-actions">
+          <div class="row card-actions form-actions">
             <button type="submit" class="btn primary">开始 Backfill</button>
           </div>
         </form>
@@ -343,7 +349,7 @@
         <div class="card-head">
           <h2>CPA 文件</h2>
           <div class="row" style="gap:8px;flex-wrap:wrap;">
-            <button type="button" id="btn-cpa-upload-pending" class="btn sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
+            <button type="button" id="btn-cpa-upload-pending" class="btn ghost sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
             <button type="button" id="btn-cpa-upload-all" class="btn ghost sm" title="强制重新上传当前目录全部 CPA 文件">全部重传</button>
             <button type="button" id="btn-archive-cpa" class="btn ghost sm" title="把当前 cpa_auths 中的 xai-*.json 全部移入备份目录">归档 CPA</button>
             <button type="button" id="btn-cleanup-cpa-logs" class="btn ghost sm" title="清理 backfill 摘要/失败日志等运行时文件；可选重置上传状态账本。不会删除 xai-*.json">清理日志</button>
@@ -392,11 +398,11 @@
       <div class="card wide">
         <details class="advanced fold-card" id="json-box">
           <summary class="summary-left"><span>完整 config.json（高级，默认折叠）</span></summary>
-          <div class="row" style="margin: 8px 0 10px; justify-content: flex-end;">
-            <button id="btn-save-config" class="btn primary sm" type="button">保存 JSON</button>
-          </div>
           <p class="hint">敏感字段脱敏；含 <code>*</code> 且未改动不会覆盖原密钥。保存到 <code>/data/config.json</code></p>
           <textarea id="config-editor" class="editor" spellcheck="false"></textarea>
+          <div class="row card-actions form-actions">
+            <button id="btn-save-config" class="btn primary" type="button">保存 JSON</button>
+          </div>
         </details>
       </div>
     </section>
