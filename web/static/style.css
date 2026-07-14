@@ -79,11 +79,19 @@ h1 { margin: 0; font-size: 1.25rem; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 10px 12px;
   flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
 }
 .card-head h2 { margin: 0; flex: 1 1 auto; min-width: 0; }
-.card-head .row { flex: 0 1 auto; justify-content: flex-end; }
+.card-head .row {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  margin-top: 0; /* override .row:last-child { margin-top: auto } */
+  align-items: center;
+}
 .stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px;
 }
