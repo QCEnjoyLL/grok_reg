@@ -223,8 +223,6 @@
       cloudflare_path_messages: getVal("q-cloudflare_path_messages") || "/api/mails",
       cloudflare_path_domains: getVal("q-cloudflare_path_domains") || "/api/domains",
       cloudflare_path_token: getVal("q-cloudflare_path_token") || "/api/token",
-      proxy: getVal("q-proxy"),
-      cpa_proxy: getVal("q-cpa_proxy"),
       cpa_export_enabled: bool(getVal("q-cpa_export_enabled") || "true"),
       cpa_headless: bool(getVal("q-cpa_headless") || "false"),
       cpa_base_url: getVal("q-cpa_base_url") || "https://cli-chat-proxy.grok.com/v1",
@@ -248,6 +246,13 @@
     if (cpaKey && !cpaKey.includes("*")) out.cpa_management_key = cpaKey;
     const cmp = getVal("q-cloudmail_password");
     if (cmp && !cmp.includes("*")) out.cloudmail_password = cmp;
+    // proxy URLs are redacted in UI; only write back when user actually changed them
+    const proxyVal = getVal("q-proxy");
+    if (proxyVal && !proxyVal.includes("*")) out.proxy = proxyVal;
+    else if (proxyVal === "") out.proxy = "";
+    const cpaProxyVal = getVal("q-cpa_proxy");
+    if (cpaProxyVal && !cpaProxyVal.includes("*")) out.cpa_proxy = cpaProxyVal;
+    else if (cpaProxyVal === "") out.cpa_proxy = "";
     return out;
   }
   async function refreshStatus() {

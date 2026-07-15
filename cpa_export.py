@@ -26,12 +26,22 @@ _UPLOAD_STATE_LOCK = threading.RLock()
 
 def resolve_cpa_proxy(cfg: dict) -> str:
     """Resolve CPA outbound proxy, supporting an explicit direct mode."""
-    configured = str(cfg.get("cpa_proxy") or "").strip()
-    if configured.lower() in {"direct", "none", "off", "disabled"}:
-        return ""
+
+    def _usable(p: str) -> str:
+        s = str(p or "").strip()
+        if not s:
+            return ""
+        if s.lower() in {"direct", "none", "off", "disabled"}:
+            return ""
+        # reject UI-redacted values that were accidentally persisted
+        if "*" in s and s.count("*") >= max(3, len(s) // 3):
+            return ""
+        return s
+
+    configured = _usable(str(cfg.get("cpa_proxy") or ""))
     if configured:
         return configured
-    fallback = str(cfg.get("proxy") or "").strip()
+    fallback = _usable(str(cfg.get("proxy") or ""))
     if fallback:
         return fallback
     return (

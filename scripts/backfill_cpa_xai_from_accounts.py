@@ -115,7 +115,17 @@ def main() -> int:
             print(f"warn: read config proxy failed: {e}", flush=True)
     elif args.proxy.strip().lower() in {"direct", "none", "off", "disabled"}:
         args.proxy = ""
-    print(f"proxy={args.proxy or '(none)'}", flush=True)
+    try:
+        from cpa_xai.proxyutil import proxy_log_label
+        _plog = proxy_log_label(args.proxy) if args.proxy else "(none)"
+    except Exception:
+        _plog = "(set)" if args.proxy else "(none)"
+    print(f"proxy={_plog}", flush=True)
+    if not args.proxy:
+        print(
+            "warn: no proxy for backfill browser mint; Cloudflare Turnstile may show Verification failed",
+            flush=True,
+        )
 
     accounts = parse_accounts_file(args.accounts)
     if args.email:

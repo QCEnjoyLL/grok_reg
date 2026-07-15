@@ -42,6 +42,41 @@ class BrowserConfirmError(RuntimeError):
     pass
 
 
+def _cf_verification_failed(page: Any, text: str = "") -> bool:
+    """Detect Cloudflare Turnstile hard-fail banners."""
+    blob = f"{text or ''} {_visible_text(page) if page is not None else ''}".lower()
+    needles = (
+        "verification failed",
+        "验证失败",
+        "cloudflare.*failed",
+        "troubleshoot",
+    )
+    # troubleshoot alone is weak; require verification failed or explicit combo
+    if "verification failed" in blob or "验证失败" in blob:
+        return True
+    if "troubleshoot" in blob and "cloudflare" in blob and "failed" in blob:
+        return True
+    try:
+        if page is not None:
+            # red failed mark / aria text often present
+            el = page.ele("text:Verification failed", timeout=0.15) or page.ele(
+                "text:验证失败", timeout=0.15
+            )
+            if el:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _page_mentions_turnstile_fail(page: Any) -> bool:
+    try:
+        return _cf_verification_failed(page, "")
+    except Exception:
+        return False
+
+
+
 def _sleep(sec: float) -> None:
     time.sleep(sec)
 
@@ -133,12 +168,27 @@ def create_standalone_page(
 
     # explicit / runtime config first; env only as fallback
     proxy = resolve_proxy(proxy)
-    chrome_proxy = proxy_for_chromium(proxy)
-    if chrome_proxy:
-        opts.set_argument(f"--proxy-server={chrome_proxy}")
-        log(f"browser proxy={proxy_log_label(proxy)} (chromium {chrome_proxy})")
+    # create_browser_options() may already set --proxy-server via authenticated
+    # local bridge (user:pass@host). Do NOT overwrite that with host:port-only.
+    already = ""
+    try:
+        args = getattr(opts, "arguments", None) or getattr(opts, "_arguments", None) or []
+        for a in list(args):
+            s = str(a)
+            if s.startswith("--proxy-server="):
+                already = s.split("=", 1)[1].strip()
+                break
+    except Exception:
+        already = ""
+    if already:
+        log(f"browser proxy={proxy_log_label(proxy) or already} (keep existing {already})")
     else:
-        log("browser proxy=(none)")
+        chrome_proxy = proxy_for_chromium(proxy)
+        if chrome_proxy:
+            opts.set_argument(f"--proxy-server={chrome_proxy}")
+            log(f"browser proxy={proxy_log_label(proxy)} (chromium {chrome_proxy})")
+        else:
+            log("browser proxy=(none)")
 
     browser = Chromium(opts)
     page = browser.latest_tab
@@ -911,15 +961,38 @@ return false;
         # Password login
         if has_pass or page.ele("css:input[type='password']", timeout=0.3):
             phase = "password"
-            if login_attempts >= 5:
-                _sleep(1.0)
-                continue
+            # Hard fail: Cloudflare banner "Verification failed" — IP/reputation, need proxy rotate
+            if _cf_verification_failed(page, text):
+                log("Cloudflare Verification failed — abort browser mint (need better proxy/IP)")
+                raise BrowserConfirmError(
+                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                )
+            if login_attempts >= 4:
+                # last chance check then fail instead of spinning
+                if _cf_verification_failed(page, text):
+                    raise BrowserConfirmError(
+                        "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                    )
+                log("login attempts exhausted without leaving sign-in")
+                raise BrowserConfirmError(
+                    "login failed: still on sign-in after multiple attempts (Turnstile/password?)"
+                )
             login_attempts += 1
             log(f"login attempt {login_attempts}")
             _fill(page, "css:input[type='email']", email, log, "email")
-            _wait_turnstile(page, log, 25)
+            ok_ts = _wait_turnstile(page, log, 25)
+            if not ok_ts and _cf_verification_failed(page, ""):
+                log("Cloudflare Verification failed during turnstile wait")
+                raise BrowserConfirmError(
+                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                )
             _fill(page, "css:input[type='password']", password, log, "password")
             _wait_turnstile(page, log, 12)
+            if _cf_verification_failed(page, ""):
+                log("Cloudflare Verification failed after turnstile wait")
+                raise BrowserConfirmError(
+                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                )
             # REAL click login helps form submit
             if not _click_exact(page, ["登录", "Sign in", "Log in"], log, real=True):
                 try:
@@ -936,6 +1009,11 @@ return false;
                 if stop_event is not None and stop_event.is_set():
                     return
                 _sleep(0.5)
+                if _cf_verification_failed(page, ""):
+                    log("Cloudflare Verification failed after login click")
+                    raise BrowserConfirmError(
+                        "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                    )
                 if not page.ele("css:input[type='password']", timeout=0.2):
                     break
                 if "sign-in" not in _page_url(page):

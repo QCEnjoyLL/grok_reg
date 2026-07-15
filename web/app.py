@@ -229,6 +229,41 @@ def _zip_directory(root: Path, *, prefix: str = "") -> bytes:
     return buf.getvalue()
 
 
+
+def _looks_masked_secret(value: str) -> bool:
+    s = str(value or "")
+    if not s:
+        return False
+    # UI redaction uses keep=3 head/tail with middle stars, or all-stars for short values
+    if "*" in s and s.count("*") >= max(3, len(s) // 3):
+        return True
+    return False
+
+
+def _backfill_proxy_args() -> list[str]:
+    """CLI flags so backfill always uses dashboard proxy settings."""
+    cfg = load_config_dict()
+    proxy = ""
+    try:
+        from cpa_export import resolve_cpa_proxy
+        proxy = resolve_cpa_proxy(cfg) if isinstance(cfg, dict) else ""
+    except Exception:
+        proxy = str((cfg or {}).get("cpa_proxy") or (cfg or {}).get("proxy") or "").strip()
+        if proxy.lower() in {"direct", "none", "off", "disabled"}:
+            proxy = ""
+    if _looks_masked_secret(proxy):
+        # corrupted config: masked value was saved previously; treat as empty
+        jobs.append_log("[warn] config proxy 看起来是脱敏值(*)，已忽略；请重新填写完整代理地址并保存")
+        proxy = ""
+    args: list[str] = ["--config", str(resolve_config_path())]
+    if proxy:
+        args.extend(["--proxy", proxy])
+    else:
+        # explicit direct so logs are clear and we don't silently differ
+        args.extend(["--proxy", "direct"])
+    return args
+
+
 def _run_backfill_sync(*, timeout_sec: int = 3600) -> dict[str, Any]:
     """Run missing-CPA backfill in-process wait (blocks request thread)."""
     script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
@@ -252,6 +287,7 @@ def _run_backfill_sync(*, timeout_sec: int = 3600) -> dict[str, Any]:
         "--sleep",
         "2",
         "--probe",
+        *_backfill_proxy_args(),
     ]
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -1046,6 +1082,7 @@ def _handle_task_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             str(body.sleep),
             "--out-dir",
             str(resolve_cpa_dir()),
+            *_backfill_proxy_args(),
         ]
         if body.probe:
             cmd.append("--probe")
@@ -1509,8 +1546,11 @@ def api_config_put(body: ConfigUpdateBody, request: Request):
         if k in ("_cmd", "__cmd", "_ui_cmd", "__job"):
             cmd_payload = v
             continue
-        if k in secret_keys and isinstance(v, str) and "*" in v and k in existing:
-            if mask_secret(str(existing.get(k, ""))) == v:
+        if k in secret_keys and isinstance(v, str) and "*" in v:
+            # never overwrite real secrets with redacted UI values
+            if k in existing and mask_secret(str(existing.get(k, ""))) == v:
+                continue
+            if _looks_masked_secret(v):
                 continue
         merged[k] = v
     # never persist control keys from old files either
@@ -1630,18 +1670,19 @@ def api_job_backfill(body: BackfillBody, request: Request):
         raise HTTPException(409, "任务运行中")
     script = APP_HOME / "scripts" / "backfill_cpa_xai_from_accounts.py"
     cmd = [
-        sys.executable,
-        "-u",
-        str(script),
-        "--limit",
-        str(body.limit),
-        "--timeout",
-        str(body.timeout),
-        "--sleep",
-        str(body.sleep),
-        "--out-dir",
-        str(resolve_cpa_dir()),
-    ]
+            sys.executable,
+            "-u",
+            str(script),
+            "--limit",
+            str(body.limit),
+            "--timeout",
+            str(body.timeout),
+            "--sleep",
+            str(body.sleep),
+            "--out-dir",
+            str(resolve_cpa_dir()),
+            *_backfill_proxy_args(),
+        ]
     if body.probe:
         cmd.append("--probe")
     if body.headless:
