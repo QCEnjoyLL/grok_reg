@@ -104,6 +104,35 @@ def _page_mentions_turnstile_fail(page: Any) -> bool:
         return False
 
 
+def _login_page_error(page: Any, text: str = "") -> str:
+    """Detect visible login error messages (wrong password, etc.)."""
+    try:
+        blob = f"{text or ''} {_visible_text(page) if page is not None else ''}"
+    except Exception:
+        blob = str(text or "")
+    low = blob.lower()
+    checks = [
+        ("incorrect password", "密码错误"),
+        ("invalid email or password", "邮箱或密码无效"),
+        ("invalid password", "密码无效"),
+        ("wrong password", "密码错误"),
+        ("password is incorrect", "密码错误"),
+        ("couldn't sign you in", "无法登录"),
+        ("could not sign you in", "无法登录"),
+        ("too many attempts", "尝试次数过多"),
+        ("try again later", "请稍后再试"),
+        ("account locked", "账号已锁定"),
+        ("must provide a password", "未填写密码"),
+        ("请输入密码", "未填写密码"),
+        ("密码错误", "密码错误"),
+        ("账号或密码", "账号或密码错误"),
+    ]
+    for en, zh in checks:
+        if en in low or zh in blob:
+            return zh if zh in blob else en
+    return ""
+
+
 
 def _sleep(sec: float) -> None:
     time.sleep(sec)
@@ -598,8 +627,19 @@ def _click_exact(
     return None
 
 
-def _fill(page: Any, selector: str, value: str, log: LogFn, label: str) -> bool:
-    """Fill an input reliably without logging its sensitive value."""
+def _fill(
+    page: Any,
+    selector: str,
+    value: str,
+    log: LogFn,
+    label: str,
+    *,
+    force: bool = False,
+) -> bool:
+    """Fill an input reliably without logging its sensitive value.
+
+    force=True always retypes (useful for React password fields that look filled).
+    """
     try:
         el = page.ele(selector, timeout=0.8)
     except Exception as e:
@@ -611,19 +651,33 @@ def _fill(page: Any, selector: str, value: str, log: LogFn, label: str) -> bool:
     for attempt in range(1, 4):
         try:
             current = str(getattr(el, "value", "") or el.attr("value") or "")
-            if current == value:
+            if (not force) and current == value and value != "":
                 return True
-            el.clear()
+            try:
+                el.click()
+            except Exception:
+                pass
+            try:
+                el.clear()
+            except Exception:
+                try:
+                    el.run_js(
+                        "this.focus(); this.value='';"
+                        "this.dispatchEvent(new Event('input',{bubbles:true}));"
+                        "this.dispatchEvent(new Event('change',{bubbles:true}));"
+                    )
+                except Exception:
+                    pass
             el.input(value)
             current = str(getattr(el, "value", "") or el.attr("value") or "")
-            if current == value:
-                log(f"filled {label}")
+            if current == value or (value and len(current) >= max(1, len(value) - 1)):
+                log(f"filled {label}" + (" (force)" if force else ""))
                 return True
         except Exception as e:
             if attempt == 3:
                 log(f"fill {label} failed: {e}")
                 return False
-        _sleep(0.2)
+        _sleep(0.25)
     return False
 
 
@@ -989,12 +1043,15 @@ return false;
         # Password login
         if has_pass or page.ele("css:input[type='password']", timeout=0.3):
             phase = "password"
+            page_err = _login_page_error(page, text)
             if login_attempts >= 6:
                 st = _cf_turnstile_state(page, text)
                 if st == "failed":
                     raise BrowserConfirmError(
                         "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
                     )
+                if page_err:
+                    raise BrowserConfirmError(f"login failed: {page_err}")
                 log("login attempts exhausted without leaving sign-in")
                 raise BrowserConfirmError(
                     "login failed: still on sign-in after multiple attempts (Turnstile/password?)"
@@ -1003,8 +1060,8 @@ return false;
             login_attempts += 1
             log(f"login attempt {login_attempts}")
 
-            # Always keep credentials filled first (CF can pass while password is empty)
-            _fill(page, "css:input[type='email']", email, log, "email")
+            # Always force credentials (React fields often look filled but are empty to submit)
+            _fill(page, "css:input[type='email']", email, log, "email", force=True)
             filled_pw = False
             for sel in (
                 "css:input[data-testid='password']",
@@ -1012,36 +1069,31 @@ return false;
                 "css:input[name='password']",
                 "css:input[autocomplete='current-password']",
             ):
-                if _fill(page, sel, password, log, "password"):
+                if _fill(page, sel, password, log, "password", force=True):
                     filled_pw = True
                     break
             if not filled_pw:
                 log("password field fill failed — will retry")
+                _sleep(1.0)
+                continue
 
-            # Wait for Turnstile; allow recovery from transient Verification failed
-            ok_ts = _wait_turnstile(page, log, 35)
+            # Wait until Turnstile token is actually ready before Login click
+            ok_ts = _wait_turnstile(page, log, 50)
             st = _cf_turnstile_state(page, "")
             if st == "failed":
-                # brief recovery window (manual assist / IP recover / patch retry)
                 log("Cloudflare Verification failed — wait/retry before abort")
                 recovered = False
-                for _ in range(12):  # ~18s
+                for _ in range(10):
                     if stop_event is not None and stop_event.is_set():
                         return
                     _sleep(1.5)
-                    # re-click / wait turnstile
-                    if _wait_turnstile(page, log, 4):
+                    if _wait_turnstile(page, log, 5):
                         recovered = True
                         break
-                    st2 = _cf_turnstile_state(page, "")
-                    if st2 == "success":
+                    if _cf_turnstile_state(page, "") == "success":
                         recovered = True
-                        break
-                    if st2 != "failed":
-                        # pending — keep waiting a bit more in outer loop
                         break
                 if not recovered and _cf_turnstile_state(page, "") == "failed":
-                    # only hard-fail after recovery window
                     if login_attempts >= 3:
                         raise BrowserConfirmError(
                             "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
@@ -1049,25 +1101,40 @@ return false;
                     log("CF still failed — another login attempt after short pause")
                     _sleep(2.0)
                     continue
+                ok_ts = True
             elif not ok_ts and st != "success":
-                log(f"turnstile state={st}, continue trying")
+                # Do NOT click Login without token — just retry next loop
+                log(f"turnstile not ready (state={st}) — skip Login click this round")
+                _sleep(1.2)
+                continue
 
-            # Re-fill password after CF interactions (page may reset form)
+            # Re-force password after CF (page may reset controlled inputs)
             for sel in (
                 "css:input[data-testid='password']",
                 "css:input[type='password']",
                 "css:input[name='password']",
             ):
-                if _fill(page, sel, password, log, "password"):
+                if _fill(page, sel, password, log, "password", force=True):
                     break
+            _fill(page, "css:input[type='email']", email, log, "email", force=False)
 
-            # If UI complains password empty, fill again
             vis = _visible_text(page)
             if "must provide a password" in vis.lower() or "请输入密码" in vis:
-                log("page says password required — re-fill")
-                _fill(page, "css:input[type='password']", password, log, "password")
+                log("page says password required — re-fill force")
+                _fill(page, "css:input[type='password']", password, log, "password", force=True)
 
-            # REAL click login
+            # Double-check token still present right before submit
+            token_ok = False
+            try:
+                el = page.ele("css:input[name='cf-turnstile-response']", timeout=0.3)
+                token_ok = bool(el and len((el.attr("value") or "").strip()) > 20)
+            except Exception:
+                token_ok = False
+            if not token_ok and _cf_turnstile_state(page, "") != "success":
+                log("turnstile token missing before Login — wait more")
+                if not _wait_turnstile(page, log, 15):
+                    continue
+
             if not _click_exact(page, ["登录", "Sign in", "Log in", "Login"], log, real=True):
                 try:
                     el = page.ele("css:button[type='submit']", timeout=0.5) or page.ele(
@@ -1079,16 +1146,28 @@ return false;
                 except Exception as e:
                     log(f"login submit fail: {e}")
 
-            # wait navigation / leave password form
-            for _ in range(24):
+            # wait navigation / leave password form; capture error text
+            left = False
+            for _ in range(30):
                 if stop_event is not None and stop_event.is_set():
                     return
                 _sleep(0.5)
                 if not page.ele("css:input[type='password']", timeout=0.2):
+                    left = True
                     break
                 if "sign-in" not in _page_url(page):
+                    left = True
                     break
-                # if password emptied by site after fail, next loop will refill
+                err_now = _login_page_error(page, "")
+                if err_now and err_now not in ("未填写密码", "must provide a password"):
+                    log(f"login page error: {err_now}")
+                    if any(x in err_now for x in ("密码错误", "无效", "incorrect", "invalid", "wrong")):
+                        raise BrowserConfirmError(f"login failed: {err_now}")
+                    break
+            if not left:
+                snip = _norm(_visible_text(page))[:160]
+                if snip:
+                    log(f"still on sign-in after Login: {snip}")
             continue
 
         _sleep(1.0)
