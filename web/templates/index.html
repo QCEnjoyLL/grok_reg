@@ -323,6 +323,29 @@
           </div>
         </div>
         <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。归档会先补生成缺失 CPA，再把 <code>accounts_cli.txt</code> 备份到 <code>accounts_cli_backup/</code> 并清空当前列表。</p>
+        <div class="filter-bar" id="accounts-filter-bar">
+          <label class="filter-item">
+            <span class="filter-label">SSO</span>
+            <select id="accounts-filter-sso">
+              <option value="all" selected>全部</option>
+              <option value="yes">有 SSO</option>
+              <option value="no">无 SSO</option>
+            </select>
+          </label>
+          <label class="filter-item">
+            <span class="filter-label">CPA 文件</span>
+            <select id="accounts-filter-cpa">
+              <option value="all" selected>全部</option>
+              <option value="missing">缺失 CPA</option>
+              <option value="has">已有 CPA</option>
+            </select>
+          </label>
+          <label class="filter-item filter-grow">
+            <span class="filter-label">搜索邮箱</span>
+            <input type="text" id="accounts-filter-q" placeholder="例如 piv.de5.net 或 9xj3..." />
+          </label>
+          <div class="filter-stats" id="accounts-filter-stats">-</div>
+        </div>
         <div id="accounts-table" class="table-wrap">加载中...</div>
         <div class="pager" id="accounts-pager" data-kind="accounts">
           <div class="pager-left">

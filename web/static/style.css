@@ -899,3 +899,10 @@ a.repo-link.btn {
     height: 42px;
   }
 }
+
+/* accounts list CPA flag column */
+.col-cpa-flag { width: 88px; text-align: center; }
+#accounts-table table { width: 100%; table-layout: fixed; }
+#accounts-table .col-email { width: 36%; }
+#accounts-table .col-pass { width: 28%; }
+#accounts-table .col-sso { width: 24%; }

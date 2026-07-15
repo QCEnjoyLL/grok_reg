@@ -283,7 +283,7 @@
   }
   const PAGE_SIZES = [5, 10, 20, 50, 100, 500];
   const listState = {
-    accounts: { page: 1, pageSize: 10, total: 0, pages: 1 },
+    accounts: { page: 1, pageSize: 10, total: 0, pages: 1, filterSso: "all", filterCpa: "all", filterQ: "" },
     cpa: { page: 1, pageSize: 10, total: 0, pages: 1, filterStatus: "all", filterQ: "" },
   };
   function loadPageSize(key, fallback) {
@@ -325,9 +325,29 @@
     const st = listState.accounts;
     const limit = st.pageSize;
     const offset = (st.page - 1) * limit;
-    const data = await api("/api/accounts?limit=" + limit + "&offset=" + offset);
+    const ssoEl = document.getElementById("accounts-filter-sso");
+    const cpaEl = document.getElementById("accounts-filter-cpa");
+    const qEl = document.getElementById("accounts-filter-q");
+    if (ssoEl) st.filterSso = ssoEl.value || "all";
+    if (cpaEl) st.filterCpa = cpaEl.value || "all";
+    if (qEl) st.filterQ = String(qEl.value || "").trim();
+    const qs = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      sso: st.filterSso || "all",
+      cpa: st.filterCpa || "all",
+      q: st.filterQ || "",
+    });
+    const data = await api("/api/accounts?" + qs.toString());
     const box = document.getElementById("accounts-table");
     updatePagerUI("accounts", data);
+    const stats = document.getElementById("accounts-filter-stats");
+    if (stats) {
+      const all = data.total_all != null ? data.total_all : data.total;
+      const miss = data.without_cpa != null ? data.without_cpa : "-";
+      const has = data.with_cpa != null ? data.with_cpa : "-";
+      stats.textContent = "匹配 " + (data.total || 0) + " / 全部 " + all + " · 缺CPA " + miss + " · 有CPA " + has;
+    }
     if (!data.items || !data.items.length) {
       box.innerHTML = "<p class='hint'>" + esc(__S.no_accounts) + "</p>";
       return;
@@ -343,21 +363,26 @@
           '</span>'
         )
         : "-";
+      const cpaBadge = r.has_cpa
+        ? '<span class="badge-up yes">有CPA</span>'
+        : '<span class="badge-up no">缺CPA</span>';
       return (
         "<tr>" +
         '<td class="col-email" title="' + esc(r.email || "") + '">' + esc(r.email || "") + "</td>" +
         '<td class="col-pass">' + passCell + "</td>" +
         "<td>" + (r.has_sso ? esc(r.sso_preview || "有") : "-") + "</td>" +
+        '<td class="col-cpa-flag">' + cpaBadge + "</td>" +
         "</tr>"
       );
     }).join("");
     box.innerHTML =
       "<table>" +
-      '<colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"></colgroup>' +
+      '<colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"><col class="col-cpa-flag"></colgroup>' +
       "<thead><tr>" +
       "<th>" + esc(__S.email || "邮箱") + "</th>" +
       "<th>" + esc(__S.password || "密码") + "</th>" +
       "<th>SSO</th>" +
+      "<th>CPA</th>" +
       "</tr></thead>" +
       "<tbody>" + rows + "</tbody>" +
       "</table>";
@@ -1059,6 +1084,31 @@
       }
     });
   }
+  
+  function bindAccountsFilters() {
+    const ssoEl = document.getElementById("accounts-filter-sso");
+    const cpaEl = document.getElementById("accounts-filter-cpa");
+    const qEl = document.getElementById("accounts-filter-q");
+    let timer = null;
+    const run = () => {
+      listState.accounts.page = 1;
+      refreshAccounts().catch((e) => toast(String(e.message || e)));
+    };
+    ssoEl?.addEventListener("change", run);
+    cpaEl?.addEventListener("change", run);
+    qEl?.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(run, 280);
+    });
+    qEl?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        clearTimeout(timer);
+        run();
+      }
+    });
+  }
+  bindAccountsFilters();
+
   bindCpaFilters();
 
   document.getElementById("btn-refresh-cpa")?.addEventListener("click", () => {

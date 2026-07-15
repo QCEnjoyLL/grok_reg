@@ -1180,36 +1180,110 @@ def api_accounts(
     request: Request,
     limit: int = Query(20, ge=1, le=2000),
     offset: int = Query(0, ge=0),
+    q: str = Query(""),
+    sso: str = Query("all"),
+    cpa: str = Query("all"),
 ):
+    """List accounts with filters.
+
+    q: email keyword
+    sso: all | yes | no
+    cpa: all | has | missing  (whether local xai-*.json exists)
+    """
     require_auth(request)
     path = resolve_accounts_path()
-    rows = []
-    total = 0
+    cpa_dir = resolve_cpa_dir()
+    cpa_emails: set[str] = set()
+    if cpa_dir.is_dir():
+        for f in cpa_dir.glob("xai-*.json"):
+            name = f.name
+            if name.startswith("xai-") and name.endswith(".json"):
+                cpa_emails.add(name[len("xai-") : -len(".json")].lower())
+
+    query = str(q or "").strip().lower()
+    sso_key = str(sso or "all").strip().lower()
+    if sso_key in ("true", "1", "y", "has", "with"):
+        sso_key = "yes"
+    if sso_key in ("false", "0", "n", "missing", "none", "without"):
+        sso_key = "no"
+    if sso_key not in ("all", "yes", "no"):
+        sso_key = "all"
+
+    cpa_key = str(cpa or "all").strip().lower()
+    if cpa_key in ("true", "1", "y", "yes", "uploaded", "ok", "exists"):
+        cpa_key = "has"
+    if cpa_key in ("false", "0", "n", "no", "pending", "none"):
+        cpa_key = "missing"
+    if cpa_key not in ("all", "has", "missing"):
+        cpa_key = "all"
+
+    items_all: list[dict[str, Any]] = []
+    total_all = 0
+    with_sso = 0
+    without_sso = 0
+    with_cpa = 0
+    without_cpa = 0
     if path.is_file():
         lines = [ln.strip() for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
-        total = len(lines)
-        for ln in lines[offset : offset + limit]:
+        total_all = len(lines)
+        for ln in lines:
             parts = ln.split("----")
-            email = parts[0] if parts else ln
-            password = parts[1] if len(parts) > 1 else ""
-            sso = parts[2] if len(parts) > 2 else ""
-            rows.append(
+            email = (parts[0] if parts else ln).strip()
+            password = parts[1].strip() if len(parts) > 1 else ""
+            sso_val = parts[2].strip() if len(parts) > 2 else ""
+            if len(parts) > 3 and not sso_val:
+                sso_val = "----".join(p.strip() for p in parts[2:]).strip()
+            has_sso = bool(sso_val)
+            has_cpa = email.lower() in cpa_emails if email else False
+            if has_sso:
+                with_sso += 1
+            else:
+                without_sso += 1
+            if has_cpa:
+                with_cpa += 1
+            else:
+                without_cpa += 1
+
+            if sso_key == "yes" and not has_sso:
+                continue
+            if sso_key == "no" and has_sso:
+                continue
+            if cpa_key == "has" and not has_cpa:
+                continue
+            if cpa_key == "missing" and has_cpa:
+                continue
+            if query and query not in email.lower():
+                continue
+            items_all.append(
                 {
                     "email": email,
                     "password": password,
-                    "sso_preview": (sso[:20] + "...") if len(sso) > 20 else sso,
-                    "has_sso": bool(sso),
+                    "sso_preview": (sso_val[:20] + "...") if len(sso_val) > 20 else sso_val,
+                    "has_sso": has_sso,
+                    "has_cpa": has_cpa,
+                    "cpa_status": "has" if has_cpa else "missing",
                 }
             )
+
+    total = len(items_all)
+    page_items = items_all[offset : offset + limit]
     page = (offset // limit) + 1 if limit else 1
     pages = max(1, (total + limit - 1) // limit) if limit else 1
     return {
         "total": total,
+        "total_all": total_all,
+        "with_sso": with_sso,
+        "without_sso": without_sso,
+        "with_cpa": with_cpa,
+        "without_cpa": without_cpa,
         "limit": limit,
         "offset": offset,
         "page": page,
         "pages": pages,
-        "items": rows,
+        "q": q,
+        "sso": sso_key,
+        "cpa": cpa_key,
+        "items": page_items,
     }
 
 
