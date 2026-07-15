@@ -188,7 +188,13 @@ def mint_and_export(
         + (proxy_log_label(resolved) or "(none)")
         + " sso="
         + sso_flag
+        + " password_len="
+        + str(len(password))
     )
+    if password and len(password) > 64:
+        log(
+            "warn: password_len>64 looks abnormal (possible mis-parsed accounts line or fill append bug)"
+        )
 
     # 1) Prefer pure HTTP SSO -> device approve (no Turnstile / no Chromium)
     if prefer_sso_http and sso_val:

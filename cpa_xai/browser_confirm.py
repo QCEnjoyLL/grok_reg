@@ -112,6 +112,7 @@ def _login_page_error(page: Any, text: str = "") -> str:
         blob = str(text or "")
     low = blob.lower()
     checks = [
+        ("wrong email address or password", "邮箱或密码错误"),
         ("incorrect password", "密码错误"),
         ("invalid email or password", "邮箱或密码无效"),
         ("invalid password", "密码无效"),
@@ -636,10 +637,12 @@ def _fill(
     *,
     force: bool = False,
 ) -> bool:
-    """Fill an input reliably without logging its sensitive value.
+    """Fill an input without logging secrets.
 
-    force=True always retypes (useful for React password fields that look filled).
+    Password fields use atomic JS value setter to avoid clear-fail append bugs
+    (DrissionPage input() can concatenate when clear() does not really empty React fields).
     """
+    value = str(value or "")
     try:
         el = page.ele(selector, timeout=0.8)
     except Exception as e:
@@ -648,37 +651,103 @@ def _fill(
     if el is None:
         return False
 
+    def _read_val() -> str:
+        try:
+            return str(getattr(el, "value", "") or el.attr("value") or "")
+        except Exception:
+            return ""
+
+    current = _read_val()
+    if (not force) and current == value and value != "":
+        return True
+
+    js_atomic = (
+        "const val = arguments[0];"
+        "const el = this;"
+        "if (!el) return 'missing';"
+        "el.focus();"
+        "const proto = window.HTMLInputElement && window.HTMLInputElement.prototype;"
+        "const desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');"
+        "if (desc && desc.set) { desc.set.call(el, val); } else { el.value = val; }"
+        "el.dispatchEvent(new Event('input', {bubbles: true}));"
+        "el.dispatchEvent(new Event('change', {bubbles: true}));"
+        "return String(el.value || '');"
+    )
+
     for attempt in range(1, 4):
         try:
-            current = str(getattr(el, "value", "") or el.attr("value") or "")
-            if (not force) and current == value and value != "":
-                return True
+            # 1) atomic set via element JS (password-safe: value is arg, not source)
             try:
-                el.click()
+                ret = el.run_js(js_atomic, value)
+                if isinstance(ret, str) and ret not in ("missing", None):
+                    if ret == value or (value and len(ret) == len(value)):
+                        log(f"filled {label} via JS len={len(value)}")
+                        return True
+                    # still wrong length -> continue repair
+                    if value and len(ret) > len(value) and value in ret:
+                        log(f"fill {label} append-bug got_len={len(ret)} expect={len(value)}")
             except Exception:
                 pass
+
+            # 2) page.querySelector path
             try:
-                el.clear()
+                css = selector[4:] if selector.startswith("css:") else selector
+                ret2 = page.run_js(
+                    "const sel=arguments[0]; const val=arguments[1];"
+                    "const el=document.querySelector(sel); if(!el) return 'missing';"
+                    "el.focus();"
+                    "const proto=window.HTMLInputElement&&window.HTMLInputElement.prototype;"
+                    "const desc=proto&&Object.getOwnPropertyDescriptor(proto,'value');"
+                    "if(desc&&desc.set) desc.set.call(el,val); else el.value=val;"
+                    "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                    "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                    "return String(el.value||'');",
+                    css,
+                    value,
+                )
+                if isinstance(ret2, str) and (ret2 == value or (value and len(ret2) == len(value))):
+                    log(f"filled {label} via page-js len={len(value)}")
+                    return True
             except Exception:
+                pass
+
+            # 3) classic path only if field is empty (avoid append)
+            got = _read_val()
+            if got and value and got != value:
+                # refuse classic input when non-empty and wrong — reset via JS first
                 try:
-                    el.run_js(
-                        "this.focus(); this.value='';"
-                        "this.dispatchEvent(new Event('input',{bubbles:true}));"
-                        "this.dispatchEvent(new Event('change',{bubbles:true}));"
-                    )
+                    el.run_js(js_atomic, value)
+                    got = _read_val()
+                    if got == value or (value and len(got) == len(value)):
+                        log(f"filled {label} after reset len={len(value)}")
+                        return True
                 except Exception:
                     pass
-            el.input(value)
-            current = str(getattr(el, "value", "") or el.attr("value") or "")
-            if current == value or (value and len(current) >= max(1, len(value) - 1)):
-                log(f"filled {label}" + (" (force)" if force else ""))
-                return True
+            else:
+                try:
+                    el.click()
+                except Exception:
+                    pass
+                try:
+                    el.clear()
+                except Exception:
+                    pass
+                if not _read_val():
+                    el.input(value)
+                    got = _read_val()
+                    if got == value or (value and len(got) == len(value)):
+                        log(f"filled {label} len={len(value)}")
+                        return True
+
+            if attempt == 3:
+                log(f"fill {label} mismatch got_len={len(_read_val())} expect_len={len(value)}")
         except Exception as e:
             if attempt == 3:
                 log(f"fill {label} failed: {e}")
                 return False
         _sleep(0.25)
     return False
+
 
 
 def _wait_turnstile(page: Any, log: LogFn, timeout: float = 45.0) -> bool:
@@ -1058,7 +1127,7 @@ return false;
                 )
 
             login_attempts += 1
-            log(f"login attempt {login_attempts}")
+            log(f"login attempt {login_attempts} password_len={len(password)}")
 
             # Always force credentials (React fields often look filled but are empty to submit)
             _fill(page, "css:input[type='email']", email, log, "email", force=True)
@@ -1148,7 +1217,7 @@ return false;
 
             # wait navigation / leave password form; capture error text
             left = False
-            for _ in range(30):
+            for _ in range(20):
                 if stop_event is not None and stop_event.is_set():
                     return
                 _sleep(0.5)
@@ -1159,15 +1228,32 @@ return false;
                     left = True
                     break
                 err_now = _login_page_error(page, "")
-                if err_now and err_now not in ("未填写密码", "must provide a password"):
+                if err_now and err_now not in ("未填写密码",):
                     log(f"login page error: {err_now}")
-                    if any(x in err_now for x in ("密码错误", "无效", "incorrect", "invalid", "wrong")):
+                    # credential errors won't recover by retrying same password
+                    if any(
+                        x in err_now.lower()
+                        for x in (
+                            "密码错误",
+                            "邮箱或密码",
+                            "无效",
+                            "incorrect",
+                            "invalid",
+                            "wrong email",
+                            "wrong password",
+                        )
+                    ):
                         raise BrowserConfirmError(f"login failed: {err_now}")
                     break
             if not left:
                 snip = _norm(_visible_text(page))[:160]
                 if snip:
                     log(f"still on sign-in after Login: {snip}")
+                # if message shows wrong password, stop immediately
+                if "wrong email address or password" in snip.lower():
+                    raise BrowserConfirmError(
+                        "login failed: Wrong email address or password"
+                    )
             continue
 
         _sleep(1.0)

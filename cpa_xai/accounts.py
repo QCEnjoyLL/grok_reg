@@ -30,6 +30,21 @@ def parse_accounts_file(path: str | Path) -> list[AccountLine]:
         email = parts[0].strip()
         password = parts[1].strip()
         sso = parts[2].strip() if len(parts) > 2 else ""
+        # If more than 3 segments (password itself contained ----), keep password=parts[1]
+        # and join remaining as sso. Never put sso into password.
+        if len(parts) > 3:
+            password = parts[1].strip()
+            sso = "----".join(p.strip() for p in parts[2:]).strip()
+        # Guard: absurdly long "password" is almost certainly mis-parsed cookie/token
+        if len(password) > 80:
+            # common footgun: email----sso (missing password) or email----sso----...
+            # If middle looks like jwt/base64 cookie, treat as sso and leave password empty skip
+            maybe_token = password
+            if maybe_token.count(".") >= 2 or len(maybe_token) > 120:
+                # cannot mint browser without real password; keep as-is but mark via empty if sso-only line
+                if not sso and len(parts) == 2:
+                    sso = password
+                    password = ""
         if not email or not password:
             continue
         out.append(AccountLine(email=email, password=password, sso=sso, raw=s, line_no=i))
