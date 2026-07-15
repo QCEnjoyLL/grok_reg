@@ -42,31 +42,59 @@ class BrowserConfirmError(RuntimeError):
     pass
 
 
-def _cf_verification_failed(page: Any, text: str = "") -> bool:
-    """Detect Cloudflare Turnstile hard-fail banners."""
-    blob = f"{text or ''} {_visible_text(page) if page is not None else ''}".lower()
-    needles = (
-        "verification failed",
-        "验证失败",
-        "cloudflare.*failed",
-        "troubleshoot",
-    )
-    # troubleshoot alone is weak; require verification failed or explicit combo
-    if "verification failed" in blob or "验证失败" in blob:
-        return True
-    if "troubleshoot" in blob and "cloudflare" in blob and "failed" in blob:
-        return True
+def _cf_turnstile_state(page: Any, text: str = "") -> str:
+    """Return turnstile state: success | failed | pending | unknown."""
+    blob = ""
+    try:
+        blob = f"{text or ''} {_visible_text(page) if page is not None else ''}".lower()
+    except Exception:
+        blob = str(text or "").lower()
+
+    # Success banner wins over stale fail text
+    if "success!" in blob or "verification successful" in blob or "验证成功" in blob:
+        return "success"
     try:
         if page is not None:
-            # red failed mark / aria text often present
-            el = page.ele("text:Verification failed", timeout=0.15) or page.ele(
-                "text:验证失败", timeout=0.15
-            )
-            if el:
-                return True
+            if page.ele("text:Success!", timeout=0.1) or page.ele("text:Success", timeout=0.1):
+                # only treat as success if near cloudflare area / token ready
+                try:
+                    el = page.ele("css:input[name='cf-turnstile-response']", timeout=0.15)
+                    v = ((el.attr("value") if el else "") or "").strip()
+                    if len(v) > 20:
+                        return "success"
+                except Exception:
+                    pass
+                # visible Success near CF widget is enough
+                return "success"
     except Exception:
         pass
-    return False
+
+    if "verification failed" in blob or "验证失败" in blob:
+        return "failed"
+    try:
+        if page is not None:
+            if page.ele("text:Verification failed", timeout=0.12) or page.ele(
+                "text:验证失败", timeout=0.12
+            ):
+                return "failed"
+    except Exception:
+        pass
+
+    # token ready counts as success even without banner text
+    try:
+        if page is not None:
+            el = page.ele("css:input[name='cf-turnstile-response']", timeout=0.15)
+            v = ((el.attr("value") if el else "") or "").strip()
+            if len(v) > 20:
+                return "success"
+    except Exception:
+        pass
+    return "pending" if ("cloudflare" in blob or "turnstile" in blob or "cf-turnstile" in blob) else "unknown"
+
+
+def _cf_verification_failed(page: Any, text: str = "") -> bool:
+    """True only for hard Cloudflare fail (not Success, not pending)."""
+    return _cf_turnstile_state(page, text) == "failed"
 
 
 def _page_mentions_turnstile_fail(page: Any) -> bool:
@@ -961,15 +989,9 @@ return false;
         # Password login
         if has_pass or page.ele("css:input[type='password']", timeout=0.3):
             phase = "password"
-            # Hard fail: Cloudflare banner "Verification failed" — IP/reputation, need proxy rotate
-            if _cf_verification_failed(page, text):
-                log("Cloudflare Verification failed — abort browser mint (need better proxy/IP)")
-                raise BrowserConfirmError(
-                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
-                )
-            if login_attempts >= 4:
-                # last chance check then fail instead of spinning
-                if _cf_verification_failed(page, text):
+            if login_attempts >= 6:
+                st = _cf_turnstile_state(page, text)
+                if st == "failed":
                     raise BrowserConfirmError(
                         "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
                     )
@@ -977,24 +999,76 @@ return false;
                 raise BrowserConfirmError(
                     "login failed: still on sign-in after multiple attempts (Turnstile/password?)"
                 )
+
             login_attempts += 1
             log(f"login attempt {login_attempts}")
+
+            # Always keep credentials filled first (CF can pass while password is empty)
             _fill(page, "css:input[type='email']", email, log, "email")
-            ok_ts = _wait_turnstile(page, log, 25)
-            if not ok_ts and _cf_verification_failed(page, ""):
-                log("Cloudflare Verification failed during turnstile wait")
-                raise BrowserConfirmError(
-                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
-                )
-            _fill(page, "css:input[type='password']", password, log, "password")
-            _wait_turnstile(page, log, 12)
-            if _cf_verification_failed(page, ""):
-                log("Cloudflare Verification failed after turnstile wait")
-                raise BrowserConfirmError(
-                    "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
-                )
-            # REAL click login helps form submit
-            if not _click_exact(page, ["登录", "Sign in", "Log in"], log, real=True):
+            filled_pw = False
+            for sel in (
+                "css:input[data-testid='password']",
+                "css:input[type='password']",
+                "css:input[name='password']",
+                "css:input[autocomplete='current-password']",
+            ):
+                if _fill(page, sel, password, log, "password"):
+                    filled_pw = True
+                    break
+            if not filled_pw:
+                log("password field fill failed — will retry")
+
+            # Wait for Turnstile; allow recovery from transient Verification failed
+            ok_ts = _wait_turnstile(page, log, 35)
+            st = _cf_turnstile_state(page, "")
+            if st == "failed":
+                # brief recovery window (manual assist / IP recover / patch retry)
+                log("Cloudflare Verification failed — wait/retry before abort")
+                recovered = False
+                for _ in range(12):  # ~18s
+                    if stop_event is not None and stop_event.is_set():
+                        return
+                    _sleep(1.5)
+                    # re-click / wait turnstile
+                    if _wait_turnstile(page, log, 4):
+                        recovered = True
+                        break
+                    st2 = _cf_turnstile_state(page, "")
+                    if st2 == "success":
+                        recovered = True
+                        break
+                    if st2 != "failed":
+                        # pending — keep waiting a bit more in outer loop
+                        break
+                if not recovered and _cf_turnstile_state(page, "") == "failed":
+                    # only hard-fail after recovery window
+                    if login_attempts >= 3:
+                        raise BrowserConfirmError(
+                            "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
+                        )
+                    log("CF still failed — another login attempt after short pause")
+                    _sleep(2.0)
+                    continue
+            elif not ok_ts and st != "success":
+                log(f"turnstile state={st}, continue trying")
+
+            # Re-fill password after CF interactions (page may reset form)
+            for sel in (
+                "css:input[data-testid='password']",
+                "css:input[type='password']",
+                "css:input[name='password']",
+            ):
+                if _fill(page, sel, password, log, "password"):
+                    break
+
+            # If UI complains password empty, fill again
+            vis = _visible_text(page)
+            if "must provide a password" in vis.lower() or "请输入密码" in vis:
+                log("page says password required — re-fill")
+                _fill(page, "css:input[type='password']", password, log, "password")
+
+            # REAL click login
+            if not _click_exact(page, ["登录", "Sign in", "Log in", "Login"], log, real=True):
                 try:
                     el = page.ele("css:button[type='submit']", timeout=0.5) or page.ele(
                         "css:button[data-testid='sign-in-submit']", timeout=0.5
@@ -1004,20 +1078,17 @@ return false;
                         log("clicked login submit real")
                 except Exception as e:
                     log(f"login submit fail: {e}")
-            # wait navigation
+
+            # wait navigation / leave password form
             for _ in range(24):
                 if stop_event is not None and stop_event.is_set():
                     return
                 _sleep(0.5)
-                if _cf_verification_failed(page, ""):
-                    log("Cloudflare Verification failed after login click")
-                    raise BrowserConfirmError(
-                        "CF_VERIFICATION_FAILED: Cloudflare Verification failed，需要换代理出口 IP 后重试"
-                    )
                 if not page.ele("css:input[type='password']", timeout=0.2):
                     break
                 if "sign-in" not in _page_url(page):
                     break
+                # if password emptied by site after fail, next loop will refill
             continue
 
         _sleep(1.0)
@@ -1108,6 +1179,16 @@ def mint_with_browser(
         token_box: dict[str, Any] = {}
         err_box: dict[str, BaseException] = {}
 
+        def _poll_cancel() -> bool:
+            if stop_event.is_set():
+                return True
+            if cancel is not None:
+                try:
+                    return bool(cancel())
+                except Exception:
+                    return False
+            return False
+
         def _poll() -> None:
             try:
                 time.sleep(2)
@@ -1116,7 +1197,7 @@ def mint_with_browser(
                     interval=max(sess.interval, 5),
                     expires_in=min(sess.expires_in, int(browser_timeout_sec) + 60),
                     log=log,
-                    cancel=cancel,
+                    cancel=_poll_cancel,
                     proxy=resolved or None,
                 )
                 token_box["token"] = tr
@@ -1128,6 +1209,7 @@ def mint_with_browser(
 
         t = threading.Thread(target=_poll, name="oauth-poll", daemon=True)
         t.start()
+        browser_err: BaseException | None = None
         try:
             approve_device_code(
                 work_page,
@@ -1140,9 +1222,23 @@ def mint_with_browser(
                 log=log,
             )
         except BrowserConfirmError as e:
-            log(f"browser confirm warning: {e}")
+            browser_err = e
+            log(f"browser confirm failed: {e}")
+            # stop oauth poll so we don't hang on authorization_pending forever
+            stop_event.set()
+        except BaseException as e:  # noqa: BLE001
+            browser_err = e
+            log(f"browser confirm error: {e}")
+            stop_event.set()
 
-        t.join(timeout=max(browser_timeout_sec, 60) + 30)
+        # If browser already failed hard, only wait briefly for a late token
+        join_timeout = max(browser_timeout_sec, 60) + 30
+        if browser_err is not None:
+            join_timeout = 15
+        t.join(timeout=join_timeout)
+        if "token" not in token_box and browser_err is not None:
+            # surface browser failure instead of waiting full poll timeout
+            raise BrowserConfirmError(str(browser_err)) from browser_err
         if "token" in token_box:
             tr = token_box["token"]
             success = True
