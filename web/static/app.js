@@ -366,23 +366,32 @@
       const cpaBadge = r.has_cpa
         ? '<span class="badge-up yes">有CPA</span>'
         : '<span class="badge-up no">缺CPA</span>';
+      const email = String(r.email || "");
+      const delBtn =
+        '<button type="button" class="btn ghost sm btn-account-del" data-email="' +
+        esc(email) +
+        '" data-has-cpa="' +
+        (r.has_cpa ? "1" : "0") +
+        '" title="从 accounts_cli.txt 删除该账号">删除</button>';
       return (
         "<tr>" +
-        '<td class="col-email" title="' + esc(r.email || "") + '">' + esc(r.email || "") + "</td>" +
+        '<td class="col-email" title="' + esc(email) + '">' + esc(email) + "</td>" +
         '<td class="col-pass">' + passCell + "</td>" +
         "<td>" + (r.has_sso ? esc(r.sso_preview || "有") : "-") + "</td>" +
         '<td class="col-cpa-flag">' + cpaBadge + "</td>" +
+        '<td class="col-acc-act"><div class="col-act-btns">' + delBtn + "</div></td>" +
         "</tr>"
       );
     }).join("");
     box.innerHTML =
       "<table>" +
-      '<colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"><col class="col-cpa-flag"></colgroup>' +
+      '<colgroup><col class="col-email"><col class="col-pass"><col class="col-sso"><col class="col-cpa-flag"><col class="col-acc-act"></colgroup>' +
       "<thead><tr>" +
       "<th>" + esc(__S.email || "邮箱") + "</th>" +
       "<th>" + esc(__S.password || "密码") + "</th>" +
       "<th>SSO</th>" +
       "<th>CPA</th>" +
+      "<th>操作</th>" +
       "</tr></thead>" +
       "<tbody>" + rows + "</tbody>" +
       "</table>";
@@ -1019,9 +1028,45 @@
     const box = document.getElementById("accounts-table");
     if (!box || box.dataset.secretBound === "1") return;
     box.dataset.secretBound = "1";
-    box.addEventListener("click", (ev) => {
+    box.addEventListener("click", async (ev) => {
       const t = ev.target;
       if (!(t instanceof Element)) return;
+
+      const del = t.closest(".btn-account-del");
+      if (del && box.contains(del)) {
+        const email = del.getAttribute("data-email") || "";
+        if (!email) return;
+        const hasCpa = del.getAttribute("data-has-cpa") === "1";
+        let msg = "确认从 accounts_cli.txt 删除该账号？\n\n" + email;
+        if (hasCpa) msg += "\n\n该账号本地已有 CPA 文件。";
+        if (!confirm(msg)) return;
+        let deleteCpa = false;
+        if (hasCpa) {
+          deleteCpa = confirm(
+            "是否同时删除对应的 CPA 文件（xai-邮箱.json）？\n\n" +
+            "确定 = 账号 + CPA 都删\n取消 = 只删账号行，保留 CPA 文件"
+          );
+        }
+        del.disabled = true;
+        try {
+          const res = await api("/api/accounts/delete", {
+            method: "POST",
+            body: JSON.stringify({ email: email, delete_cpa: !!deleteCpa }),
+            timeoutMs: 60000,
+          });
+          toast(res.message || ("已删除 " + email), "ok");
+          await Promise.all([
+            refreshAccounts().catch(() => {}),
+            refreshCpa().catch(() => {}),
+            refreshStatus().catch(() => {}),
+          ]);
+        } catch (err) {
+          toast("删除失败: " + (err.message || err), "err");
+          del.disabled = false;
+        }
+        return;
+      }
+
       const btn = t.closest(".btn-eye");
       if (!btn || !box.contains(btn)) return;
       const cell = btn.closest(".secret-cell");
@@ -1044,6 +1089,7 @@
     });
   }
   bindAccountsSecrets();
+
 // Floating back-to-top
   (function bindBackTop() {
     const btn = document.getElementById("btn-back-top");

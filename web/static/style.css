@@ -906,3 +906,8 @@ a.repo-link.btn {
 #accounts-table .col-email { width: 36%; }
 #accounts-table .col-pass { width: 28%; }
 #accounts-table .col-sso { width: 24%; }
+
+#accounts-table .col-acc-act { width: 76px; text-align: right; }
+#accounts-table .col-cpa-flag { width: 80px; }
+#accounts-table .btn-account-del { color: #ffb4bd; border-color: rgba(255,120,140,.35); }
+#accounts-table .btn-account-del:hover { filter: brightness(1.1); background: rgba(90,20,35,.35); }

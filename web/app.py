@@ -1283,11 +1283,144 @@ def api_accounts(
         "q": q,
         "sso": sso_key,
         "cpa": cpa_key,
+
         "items": page_items,
     }
 
 
+class AccountDeleteBody(BaseModel):
+    email: str | None = None
+    emails: list[str] | None = None
+    delete_cpa: bool = False
+
+
+def delete_accounts_by_email(
+    emails: list[str],
+    *,
+    delete_cpa: bool = False,
+) -> dict[str, Any]:
+    """Remove matching lines from accounts_cli.txt. Optional: remove xai-*.json."""
+    wanted = {str(e or "").strip().lower() for e in emails if str(e or "").strip()}
+    wanted.discard("")
+    if not wanted:
+        raise HTTPException(status_code=400, detail="请提供 email 或 emails")
+
+    path = resolve_accounts_path()
+    kept: list[str] = []
+    removed: list[str] = []
+    removed_lines = 0
+    if path.is_file():
+        raw_lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        for ln in raw_lines:
+            s = ln.strip()
+            if not s:
+                continue
+            if s.startswith("#"):
+                kept.append(s)
+                continue
+            parts = s.split("----")
+            email = (parts[0] if parts else s).strip().lower()
+            if email in wanted:
+                removed.append((parts[0] if parts else s).strip())
+                removed_lines += 1
+                continue
+            kept.append(s)
+        text = ("\n".join(kept) + ("\n" if kept else ""))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+
+    cpa_deleted: list[str] = []
+    cpa_missing: list[str] = []
+    if delete_cpa:
+        cpa_dir = resolve_cpa_dir()
+        targets = sorted({*removed, *[str(e).strip() for e in emails if str(e or "").strip()]})
+        for em_l in targets:
+            if not em_l:
+                continue
+            fp = cpa_dir / f"xai-{em_l}.json"
+            if not fp.is_file() and cpa_dir.is_dir():
+                for f in cpa_dir.glob("xai-*.json"):
+                    name = f.name[len("xai-") : -len(".json")]
+                    if name.lower() == em_l.lower():
+                        fp = f
+                        break
+            if fp.is_file():
+                try:
+                    fp.unlink()
+                    cpa_deleted.append(fp.name)
+                except Exception as e:
+                    cpa_missing.append(f"{fp.name}: {e}")
+            else:
+                cpa_missing.append(em_l)
+
+        if cpa_deleted:
+            state_path = cpa_dir / ".upload_state.json"
+            if state_path.is_file():
+                try:
+                    st = json.loads(state_path.read_text(encoding="utf-8"))
+                    if isinstance(st, dict):
+                        for name in cpa_deleted:
+                            st.pop(name, None)
+                        state_path.write_text(
+                            json.dumps(st, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                except Exception:
+                    pass
+
+    return {
+        "ok": True,
+        "removed_count": removed_lines,
+        "removed_emails": removed[:100],
+        "remaining": len(kept),
+        "delete_cpa": bool(delete_cpa),
+        "cpa_deleted": cpa_deleted[:50],
+        "cpa_deleted_count": len(cpa_deleted),
+        "cpa_missing": cpa_missing[:50],
+        "message": (
+            f"已删除 {removed_lines} 条账号"
+            + (f"，并删除 {len(cpa_deleted)} 个 CPA 文件" if delete_cpa else "")
+        ),
+    }
+
+
+@app.post("/api/accounts/delete")
+def api_accounts_delete(request: Request, body: AccountDeleteBody):
+    """Delete one or more accounts from accounts_cli.txt."""
+    require_auth(request)
+    if jobs.is_running():
+        raise HTTPException(409, "有任务正在运行，请先停止后再删除账号")
+    emails: list[str] = []
+    if body.email:
+        emails.append(str(body.email).strip())
+    if body.emails:
+        emails.extend(str(x).strip() for x in body.emails if str(x).strip())
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for e in emails:
+        k = e.lower()
+        if not e or k in seen:
+            continue
+        seen.add(k)
+        uniq.append(e)
+    try:
+        result = delete_accounts_by_email(uniq, delete_cpa=bool(body.delete_cpa))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"删除账号失败: {e}") from e
+    jobs.append_log(
+        f"[accounts] delete count={result.get('removed_count')} "
+        f"cpa={result.get('cpa_deleted_count') if body.delete_cpa else 0} "
+        f"emails={','.join((result.get('removed_emails') or [])[:5])}"
+    )
+    return result
+
+
 @app.get("/api/cpa")
+
 def api_cpa(
     request: Request,
     limit: int = Query(20, ge=1, le=2000),
