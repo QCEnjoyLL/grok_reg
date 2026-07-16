@@ -1601,6 +1601,95 @@ document.getElementById("form-backfill").addEventListener("submit", async (e) =>
     } catch (err) { toastSave(__S.set_fail + ": " + (err.message || err), false); }
   });
 
+
+  /* ===== appearance / theme ===== */
+  const THEME_KEY = "grok_reg_theme";
+  function getThemePref() {
+    try { return localStorage.getItem(THEME_KEY) || "system"; } catch (_) { return "system"; }
+  }
+  function resolveDark(pref) {
+    if (pref === "dark") return true;
+    if (pref === "light") return false;
+    try { return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches); }
+    catch (_) { return false; }
+  }
+  function applyTheme(pref, persist) {
+    const p = ["light", "dark", "system"].includes(pref) ? pref : "system";
+    if (persist !== false) {
+      try { localStorage.setItem(THEME_KEY, p); } catch (_) {}
+    }
+    const dark = resolveDark(p);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.dataset.theme = p;
+    document.querySelectorAll(".theme-item").forEach((el) => {
+      const on = el.dataset.theme === p;
+      el.classList.toggle("active", on);
+      const c = el.querySelector("[data-check]");
+      if (c) c.textContent = on ? "✓" : "";
+    });
+    const gear = document.querySelector("#btn-user-menu .um-gear");
+    if (gear) gear.textContent = dark ? "☾" : "☀";
+  }
+  function closeUserMenus() {
+    const pop = document.getElementById("user-pop");
+    const theme = document.getElementById("theme-pop");
+    const btn = document.getElementById("btn-user-menu");
+    if (pop) { pop.classList.remove("open"); pop.hidden = true; }
+    if (theme) { theme.classList.remove("open"); theme.hidden = true; }
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+  function initThemeMenu() {
+    applyTheme(getThemePref(), false);
+    const btn = document.getElementById("btn-user-menu");
+    const pop = document.getElementById("user-pop");
+    const themePop = document.getElementById("theme-pop");
+    const themeBtn = document.getElementById("btn-theme-menu");
+    if (!btn || !pop) return;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = pop.classList.contains("open");
+      if (open) closeUserMenus();
+      else {
+        pop.hidden = false; pop.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+        if (themePop) { themePop.hidden = true; themePop.classList.remove("open"); }
+      }
+    });
+    if (themeBtn && themePop) {
+      themeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = themePop.classList.contains("open");
+        if (open) {
+          themePop.hidden = true; themePop.classList.remove("open");
+        } else {
+          themePop.hidden = false; themePop.classList.add("open");
+        }
+      });
+    }
+    document.querySelectorAll(".theme-item").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        applyTheme(el.dataset.theme || "system", true);
+        closeUserMenus();
+      });
+    });
+    document.addEventListener("click", (e) => {
+      const menu = document.getElementById("user-menu");
+      if (menu && !menu.contains(e.target)) closeUserMenus();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeUserMenus();
+    });
+    try {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = () => {
+        if (getThemePref() === "system") applyTheme("system", false);
+      };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    } catch (_) {}
+  }
+
   document.getElementById("btn-logout").addEventListener("click", async () => {
     try { await api("/api/logout", { method: "POST", body: "{}" }); } catch (_) {}
     setToken("");
@@ -1702,6 +1791,7 @@ document.getElementById("form-backfill").addEventListener("submit", async (e) =>
   }
 
   initPageNav();
+  initThemeMenu();
   connectWs();
   refreshBuild();
   bootstrap();

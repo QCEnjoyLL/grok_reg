@@ -7,6 +7,17 @@
   <title>{{ title }} - 登录</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script id="theme-boot">
+  (function () {
+    try {
+      var k = "grok_reg_theme";
+      var pref = localStorage.getItem(k) || "system";
+      var dark = pref === "dark" || (pref === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", !!dark);
+      document.documentElement.dataset.theme = pref;
+    } catch (e) {}
+  })();
+  </script>
 </head>
 <body class="login-body">
   <div id="toast-host" aria-live="polite"></div>

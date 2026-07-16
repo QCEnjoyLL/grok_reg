@@ -7,6 +7,17 @@
   <title>{{ title }}</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css?v={{ build }}" />
+  <script id="theme-boot">
+  (function () {
+    try {
+      var k = "grok_reg_theme";
+      var pref = localStorage.getItem(k) || "system";
+      var dark = pref === "dark" || (pref === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", !!dark);
+      document.documentElement.dataset.theme = pref;
+    } catch (e) {}
+  })();
+  </script>
 </head>
 <body class="app-body">
   <div id="toast-host" aria-live="polite"></div>
@@ -30,9 +41,41 @@
           <span class="nav-dot"></span><span>系统设置</span>
         </button>
       </nav>
-      <div class="sidebar-foot">
+            <div class="sidebar-foot">
         <a class="btn ghost sm sidebar-link" href="https://github.com/QCEnjoyLL/grok_reg" target="_blank" rel="noopener noreferrer">项目地址</a>
-        <button type="button" id="btn-logout" class="btn ghost sm">退出登录</button>
+        <div class="user-menu" id="user-menu">
+          <button type="button" class="user-menu-btn" id="btn-user-menu" aria-haspopup="menu" aria-expanded="false">
+            <span class="um-left">
+              <span class="um-avatar" aria-hidden="true">GR</span>
+              <span class="um-name">Admin</span>
+            </span>
+            <span class="um-gear" aria-hidden="true">⚙</span>
+          </button>
+          <div class="user-pop" id="user-pop" role="menu" hidden>
+            <button type="button" class="menu-item" id="btn-theme-menu" role="menuitem">
+              <span class="mi-left"><span class="mi-ico">☀</span><span>外观</span></span>
+              <span class="mi-caret">›</span>
+            </button>
+            <div class="menu-sep"></div>
+            <button type="button" class="menu-item danger" id="btn-logout" role="menuitem">
+              <span class="mi-left"><span class="mi-ico">↪</span><span>退出登录</span></span>
+            </button>
+          </div>
+          <div class="theme-pop" id="theme-pop" role="menu" hidden>
+            <button type="button" class="menu-item theme-item" data-theme="light" role="menuitem">
+              <span class="mi-left"><span class="mi-ico">☀</span><span>浅色</span></span>
+              <span class="check" data-check></span>
+            </button>
+            <button type="button" class="menu-item theme-item" data-theme="dark" role="menuitem">
+              <span class="mi-left"><span class="mi-ico">☾</span><span>深色</span></span>
+              <span class="check" data-check></span>
+            </button>
+            <button type="button" class="menu-item theme-item" data-theme="system" role="menuitem">
+              <span class="mi-left"><span class="mi-ico">💻</span><span>跟随系统</span></span>
+              <span class="check" data-check></span>
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
 
