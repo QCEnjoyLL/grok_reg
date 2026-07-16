@@ -1437,9 +1437,9 @@
 
 
   const PAGE_META = {
-    register: { title: "注册", sub: "邮箱、代理、注册任务与实时日志" },
-    accounts: { title: "账号池", sub: "本地账号、CPA 文件、归档与补生成" },
-    settings: { title: "设置", sub: "系统、CPA 对接与完整配置" },
+    register: { title: "注册任务", sub: "邮箱、代理、任务参数与实时日志" },
+    accounts: { title: "账号管理", sub: "本地账号、CPA 文件、归档与补生成" },
+    settings: { title: "系统设置", sub: "系统、CPA 对接与完整配置" },
   };
   function switchPage(name, pushHash) {
     const page = PAGE_META[name] ? name : "register";
