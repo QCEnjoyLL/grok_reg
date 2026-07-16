@@ -227,6 +227,20 @@
               <span class="field-title"><span class="field-name">CPA 管理密码</span><code class="field-key">cpa_management_key</code></span>
               <input type="password" id="q-cpa_management_key" placeholder="远程管理密码，不是 API Key" autocomplete="off" />
             </label>
+            <label>
+              <span class="field-title"><span class="field-name">探测 CPA 是否可用</span><code class="field-key">cpa_probe_usability</code></span>
+              <select id="q-cpa_probe_usability">
+                <option value="true" selected>true (开，推荐)</option>
+                <option value="false">false (关)</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">不可用自动删除</span><code class="field-key">cpa_delete_unusable</code></span>
+              <select id="q-cpa_delete_unusable">
+                <option value="true" selected>true (开，推荐)</option>
+                <option value="false">false (关)</option>
+              </select>
+            </label>
           </div>
         
           <div class="row card-actions form-actions">

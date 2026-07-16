@@ -203,6 +203,8 @@
     setVal("q-cpa_management_upload_enabled", String(!!cfg.cpa_management_upload_enabled));
     setVal("q-cpa_management_base", cfg.cpa_management_base || "");
     setVal("q-cpa_management_key", cfg.cpa_management_key || "");
+    setVal("q-cpa_probe_usability", String(cfg.cpa_probe_usability !== false));
+    setVal("q-cpa_delete_unusable", String(cfg.cpa_delete_unusable !== false));
     setVal("q-cloudmail_url", cfg.cloudmail_url || "");
     setVal("q-cloudmail_admin_email", cfg.cloudmail_admin_email || "");
     setVal("q-cloudmail_password", cfg.cloudmail_password || "");
@@ -229,6 +231,8 @@
       cpa_auth_dir: getVal("q-cpa_auth_dir") || "./cpa_auths",
       cpa_management_upload_enabled: bool(getVal("q-cpa_management_upload_enabled") || "false"),
       cpa_management_base: getVal("q-cpa_management_base"),
+      cpa_probe_usability: bool(getVal("q-cpa_probe_usability") || "true"),
+      cpa_delete_unusable: bool(getVal("q-cpa_delete_unusable") || "true"),
       cloudmail_url: getVal("q-cloudmail_url"),
       cloudmail_admin_email: getVal("q-cloudmail_admin_email"),
     };
@@ -1337,6 +1341,8 @@
         cpa_auth_dir: patch.cpa_auth_dir,
         cpa_management_upload_enabled: patch.cpa_management_upload_enabled,
         cpa_management_base: patch.cpa_management_base,
+        cpa_probe_usability: patch.cpa_probe_usability,
+        cpa_delete_unusable: patch.cpa_delete_unusable,
       };
       if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });

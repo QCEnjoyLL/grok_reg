@@ -413,6 +413,12 @@ def _run_mint_job(worker_id: int | str, job: dict[str, Any], config: dict) -> di
                     f"[cpa] probe soft-fail but file kept: {result.get('probe_error') or result.get('error') or ''}",
                 )
             _inc("mint_success")
+        elif result.get("unusable") or result.get("purged"):
+            _inc("mint_fail")
+            log(
+                worker_id,
+                f"! CPA 不可用已自动删除: {email} ({result.get('error') or result.get('usability', {}).get('reason') or 'unusable'})",
+            )
         elif result.get("skipped"):
             _inc("mint_skip")
             log(worker_id, f"[cpa] skipped: {result.get('reason')}")

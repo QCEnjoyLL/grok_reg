@@ -53,6 +53,200 @@ def resolve_cpa_proxy(cfg: dict) -> str:
 
 
 
+
+def _accounts_file_from_cfg(cfg: dict) -> Path:
+    raw = str(cfg.get("accounts_file") or cfg.get("accounts_cli") or "").strip()
+    if raw:
+        p = Path(raw).expanduser()
+        if not p.is_absolute():
+            p = (_REG_DIR / p).resolve()
+        return p
+    # Docker / local defaults
+    data_dir = Path(os.environ.get("DATA_DIR") or (_REG_DIR / "data")).expanduser()
+    cand = [
+        data_dir / "accounts_cli.txt",
+        _REG_DIR / "accounts_cli.txt",
+        Path(os.environ.get("GROK_REG_DATA_DIR") or data_dir) / "accounts_cli.txt",
+    ]
+    for c in cand:
+        if c.is_file():
+            return c
+    return data_dir / "accounts_cli.txt"
+
+
+def _delete_cpa_files_for_email(email: str, auth_dir: str | Path) -> list[str]:
+    d = Path(auth_dir)
+    deleted: list[str] = []
+    if not d.is_dir():
+        return deleted
+    em = (email or "").strip()
+    if not em:
+        return deleted
+    # exact + case-insensitive
+    candidates = [d / f"xai-{em}.json"]
+    for f in d.glob("xai-*.json"):
+        name = f.name[len("xai-") : -len(".json")]
+        if name.lower() == em.lower() and f not in candidates:
+            candidates.append(f)
+    state_keys: list[str] = []
+    for fp in candidates:
+        if fp.is_file():
+            try:
+                fp.unlink()
+                deleted.append(fp.name)
+                state_keys.append(fp.name)
+            except Exception:
+                pass
+    if state_keys:
+        state_path = d / ".upload_state.json"
+        if state_path.is_file():
+            try:
+                st = json.loads(state_path.read_text(encoding="utf-8"))
+                if isinstance(st, dict):
+                    for k in state_keys:
+                        st.pop(k, None)
+                    state_path.write_text(
+                        json.dumps(st, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+            except Exception:
+                pass
+    return deleted
+
+
+def purge_unusable_cpa_account(
+    *,
+    email: str,
+    cfg: dict,
+    auth_dir: str | Path | None = None,
+    cpa_path: str | Path | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Delete unusable account line + CPA auth file(s)."""
+    log = log_callback or (lambda m: None)
+    email = (email or "").strip()
+    out: dict[str, Any] = {"email": email, "account_removed": 0, "cpa_deleted": []}
+    if not email:
+        return out
+
+    # CPA files
+    dirs: list[Path] = []
+    if cpa_path:
+        p = Path(cpa_path)
+        if p.is_file():
+            try:
+                p.unlink()
+                out["cpa_deleted"].append(p.name)
+            except Exception as e:
+                out["cpa_delete_error"] = str(e)
+            dirs.append(p.parent)
+    if auth_dir:
+        dirs.append(Path(auth_dir))
+    cfg_dir = str(cfg.get("cpa_auth_dir") or "").strip()
+    if cfg_dir:
+        d = Path(cfg_dir).expanduser()
+        if not d.is_absolute():
+            d = (_REG_DIR / d).resolve()
+        dirs.append(d)
+    # unique dirs
+    seen: set[str] = set()
+    for d in dirs:
+        try:
+            key = str(d.resolve())
+        except Exception:
+            key = str(d)
+        if key in seen:
+            continue
+        seen.add(key)
+        for name in _delete_cpa_files_for_email(email, d):
+            if name not in out["cpa_deleted"]:
+                out["cpa_deleted"].append(name)
+
+    # accounts_cli.txt
+    try:
+        from cpa_xai.accounts import remove_accounts_by_email
+        acc_path = _accounts_file_from_cfg(cfg)
+        ar = remove_accounts_by_email(acc_path, [email])
+        out["account_removed"] = int(ar.get("removed_count") or 0)
+        out["accounts_file"] = str(acc_path)
+        out["accounts_remaining"] = ar.get("remaining")
+    except Exception as e:
+        out["account_delete_error"] = str(e)
+        log(f"[cpa] purge account line failed: {e}")
+
+    log(
+        f"[cpa] purged unusable {email}: accounts={out.get('account_removed')} "
+        f"cpa_files={out.get('cpa_deleted')}"
+    )
+    return out
+
+
+
+def maybe_probe_and_purge_unusable(
+    result: dict[str, Any],
+    *,
+    email: str,
+    cfg: dict,
+    auth_dir: str | Path | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """After mint, probe chat usability; hard 401/403 -> delete account+CPA.
+
+    Mutates and returns *result*. Soft failures (network/429/etc.) keep files.
+    """
+    log = log_callback or (lambda m: None)
+    cfg = cfg or {}
+    auto_probe = bool(cfg.get("cpa_probe_usability", True))
+    auto_delete = bool(cfg.get("cpa_delete_unusable", True))
+    if not (result.get("ok") and result.get("path") and auto_probe):
+        return result
+    try:
+        from cpa_xai.probe import probe_usability
+        from cpa_xai.mint import access_token_from_cpa_file
+
+        access = ""
+        for k in ("access_token", "token"):
+            v = result.get(k)
+            if isinstance(v, str) and v.strip():
+                access = v.strip()
+                break
+            if isinstance(v, dict) and v.get("access_token"):
+                access = str(v.get("access_token")).strip()
+                break
+        if not access:
+            access = access_token_from_cpa_file(result.get("path") or "")
+        if not access:
+            log("[cpa] usability probe skipped: no access_token in result/file")
+            return result
+
+        base_url = str(cfg.get("cpa_base_url") or "https://cli-chat-proxy.grok.com/v1")
+        proxy = resolve_cpa_proxy(cfg)
+        usability = probe_usability(access, base_url=base_url, proxy=proxy or None)
+        result["usability"] = usability
+        log(
+            f"[cpa] usability: usable={usability.get('usable')} unusable={usability.get('unusable')} "
+            f"status={usability.get('status')} reason={usability.get('reason')}"
+        )
+        if usability.get("unusable") and auto_delete:
+            purged = purge_unusable_cpa_account(
+                email=email,
+                cfg=cfg,
+                auth_dir=auth_dir,
+                cpa_path=result.get("path"),
+                log_callback=log,
+            )
+            result["ok"] = False
+            result["unusable"] = True
+            result["purged"] = purged
+            result["error"] = f"unusable account deleted: {usability.get('reason')}"
+            result["path"] = ""
+            log(f"[cpa] ! unusable -> deleted account+CPA: {email}")
+    except Exception as e:  # noqa: BLE001
+        log(f"[cpa] usability probe failed: {e}")
+        result["usability_error"] = str(e)
+    return result
+
+
 def _upload_state_path(auth_dir: str | Path | None = None) -> Path:
     base = Path(auth_dir).expanduser() if auth_dir else _DEFAULT_OUT
     if not base.is_absolute():
@@ -318,6 +512,14 @@ def export_cpa_xai_for_account(
         reuse_browser=reuse_browser,
         recycle_every=recycle_every,
         log=_log,
+    )
+
+    result = maybe_probe_and_purge_unusable(
+        result,
+        email=email,
+        cfg=cfg,
+        auth_dir=out_dir,
+        log_callback=log,
     )
 
     if result.get("ok") and result.get("path") and cfg.get("cpa_copy_to_hotload", False) and cpa_dir:

@@ -55,6 +55,8 @@ def _coerce_ui_bools(cfg: dict[str, Any]) -> dict[str, Any]:
         "cpa_export_enabled",
         "cpa_headless",
         "cpa_management_upload_enabled",
+        "cpa_probe_usability",
+        "cpa_delete_unusable",
         "resin_sticky_enabled",
         "grok2api_auto_add_local",
         "grok2api_auto_add_remote",

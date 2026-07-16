@@ -71,3 +71,50 @@ def existing_cpa_emails(auth_dir: str | Path) -> set[str]:
         except Exception:
             continue
     return found
+
+
+def remove_accounts_by_email(path: str | Path, emails: list[str] | set[str]) -> dict:
+    """Remove account lines whose email matches (case-insensitive)."""
+    path = Path(path)
+    wanted = {str(e or "").strip().lower() for e in emails if str(e or "").strip()}
+    wanted.discard("")
+    if not wanted:
+        return {"removed_count": 0, "removed_emails": [], "remaining": 0, "path": str(path)}
+    if not path.is_file():
+        return {
+            "removed_count": 0,
+            "removed_emails": [],
+            "remaining": 0,
+            "path": str(path),
+            "missing_file": True,
+        }
+
+    kept: list[str] = []
+    removed: list[str] = []
+    for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("#"):
+            kept.append(s)
+            continue
+        parts = s.split("----")
+        email = (parts[0] if parts else s).strip()
+        if email.lower() in wanted:
+            removed.append(email)
+            continue
+        kept.append(s)
+
+    text = "\n".join(kept)
+    if kept:
+        text += "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    return {
+        "removed_count": len(removed),
+        "removed_emails": removed[:100],
+        "remaining": len(kept),
+        "path": str(path),
+    }

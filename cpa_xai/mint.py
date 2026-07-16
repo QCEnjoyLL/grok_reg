@@ -121,7 +121,7 @@ def _apply_models_probe(
                 result["error"] = chat_err
 
 
-def _access_token_from_cpa_file(path: str | Path) -> str:
+def access_token_from_cpa_file(path: str | Path) -> str:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception:
@@ -224,7 +224,7 @@ def mint_and_export(
             }
             if probe:
                 try:
-                    access = _access_token_from_cpa_file(result["path"])
+                    access = access_token_from_cpa_file(result["path"])
                     if access:
                         pr = probe_models(
                             access, base_url=base_url, proxy=resolved or None

@@ -26,7 +26,11 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from cpa_xai import existing_cpa_emails, mint_and_export, parse_accounts_file  # noqa: E402
-from cpa_export import resolve_cpa_proxy, upload_cpa_auth_file  # noqa: E402
+from cpa_export import (  # noqa: E402
+    maybe_probe_and_purge_unusable,
+    resolve_cpa_proxy,
+    upload_cpa_auth_file,
+)
 
 
 def main() -> int:
@@ -96,23 +100,31 @@ def main() -> int:
         args.headless = False
 
     cfg = {}
+    # Always load config (proxy / usability / management upload)
+    try:
+        cfg_path = Path(args.config)
+        if cfg_path.is_file():
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(cfg, dict):
+                cfg = {
+                    k: v
+                    for k, v in cfg.items()
+                    if not (isinstance(k, str) and (k.startswith("//") or k.startswith("#")))
+                }
+            else:
+                cfg = {}
+    except Exception as e:  # noqa: BLE001
+        print(f"warn: read config failed: {e}", flush=True)
+        cfg = {}
+
     # Resolve proxy: CLI > config cpa_proxy/proxy > env
     if not args.proxy:
         try:
-            cfg_path = Path(args.config)
-            if cfg_path.is_file():
-                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                if isinstance(cfg, dict):
-                    cfg = {
-                        k: v
-                        for k, v in cfg.items()
-                        if not (isinstance(k, str) and (k.startswith("//") or k.startswith("#")))
-                    }
-                    args.proxy = resolve_cpa_proxy(cfg)
-                    if not args.cpa_dir:
-                        args.cpa_dir = (cfg.get("cpa_hotload_dir") or "").strip()
+            args.proxy = resolve_cpa_proxy(cfg) if cfg else ""
+            if not args.cpa_dir:
+                args.cpa_dir = (cfg.get("cpa_hotload_dir") or "").strip()
         except Exception as e:  # noqa: BLE001
-            print(f"warn: read config proxy failed: {e}", flush=True)
+            print(f"warn: resolve proxy failed: {e}", flush=True)
     elif args.proxy.strip().lower() in {"direct", "none", "off", "disabled"}:
         args.proxy = ""
     try:
@@ -173,6 +185,21 @@ def main() -> int:
             sso=getattr(acc, "sso", "") or "",
             prefer_sso_http=True,
             log=log,
+        )
+        # Post-mint chat usability: hard 401/403 deletes account + CPA file
+        cfg_for_purge = dict(cfg or {})
+        cfg_for_purge.setdefault("accounts_file", str(Path(args.accounts).resolve()))
+        if args.out_dir:
+            cfg_for_purge.setdefault("cpa_auth_dir", str(Path(args.out_dir).resolve()))
+        # defaults on when keys missing
+        cfg_for_purge.setdefault("cpa_probe_usability", True)
+        cfg_for_purge.setdefault("cpa_delete_unusable", True)
+        r = maybe_probe_and_purge_unusable(
+            r,
+            email=acc.email,
+            cfg=cfg_for_purge,
+            auth_dir=args.out_dir,
+            log_callback=log,
         )
         results.append(r)
         if r.get("ok") and r.get("path"):
