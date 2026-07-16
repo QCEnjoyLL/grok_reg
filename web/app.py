@@ -1372,7 +1372,7 @@ def delete_accounts_by_email(
         text = ("\n".join(kept) + ("\n" if kept else ""))
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
+        tmp.write_text("\n".join(emails) + "\n", encoding="utf-8")
         tmp.replace(path)
 
     cpa_deleted: list[str] = []
@@ -1730,6 +1730,110 @@ def api_cpa_mark(request: Request, body: CpaMarkBody):
     return {"ok": True, "results": results}
 
 
+
+class Grok2ApiImportBody(BaseModel):
+    """Manual bulk import accounts SSO / CPA into Grok2API."""
+
+    mode: str = ""  # tokens_add | admin_web_sso | admin_cpa | auto
+    emails: list[str] | None = None
+    limit: int = Field(0, ge=0, le=10000)
+    only_with_sso: bool = True
+
+
+class Grok2ApiTestBody(BaseModel):
+    mode: str = ""
+
+
+@app.post("/api/grok2api/test")
+def api_grok2api_test(request: Request, body: Grok2ApiTestBody | None = None):
+    """Test Grok2API connectivity using saved config."""
+    require_auth(request)
+    cfg = load_config_dict()
+    body = body or Grok2ApiTestBody()
+    mode = (body.mode or "").strip() or None
+    try:
+        from grok2api_import import grok2api_admin_login, resolve_import_mode, _http_json
+
+        m = mode or resolve_import_mode(cfg)
+        if m == "tokens_add":
+            base = str(cfg.get("grok2api_remote_base") or "").strip().rstrip("/")
+            key = str(cfg.get("grok2api_remote_app_key") or "").strip()
+            if not base or not key:
+                raise HTTPException(400, "请先配置 grok2api_remote_base 与 grok2api_remote_app_key")
+            # lightweight: GET tokens list if exists, else POST empty-safe probe via login-less path
+            status, parsed, text_body = _http_json(
+                "GET",
+                f"{base}/tokens",
+                query={"app_key": key},
+                timeout=15.0,
+            )
+            if status >= 400:
+                # some deployments only have POST
+                status2, _, text2 = _http_json(
+                    "POST",
+                    f"{base}/tokens/add",
+                    body={"tokens": [], "pool": "basic"},
+                    query={"app_key": key},
+                    timeout=15.0,
+                )
+                if status2 >= 500:
+                    raise HTTPException(400, f"连接失败 HTTP {status2}: {text2[:200]}")
+                return {"ok": True, "mode": "tokens_add", "base_url": base, "note": f"tokens endpoint status={status2}"}
+            return {"ok": True, "mode": "tokens_add", "base_url": base, "status": status}
+        base = str(cfg.get("grok2api_admin_base") or cfg.get("grok2api_remote_base") or "").strip()
+        user = str(cfg.get("grok2api_admin_username") or "admin").strip() or "admin"
+        pwd = str(cfg.get("grok2api_admin_password") or cfg.get("grok2api_password") or "").strip()
+        if not base or not pwd:
+            raise HTTPException(400, "admin 模式需要 grok2api_remote_base 与 grok2api_admin_password")
+        token = grok2api_admin_login(base, user, pwd)
+        return {"ok": True, "mode": m, "base_url": base, "username": user, "token_hint": token[:12] + "..."}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/grok2api/import")
+def api_grok2api_import(request: Request, body: Grok2ApiImportBody):
+    """Import SSO/CPA into Grok2API (runs as background job with logs)."""
+    require_auth(request)
+    if jobs.is_running():
+        raise HTTPException(409, "任务运行中，请先停止")
+    cfg = load_config_dict()
+    # merge non-secret overrides from body only for mode/limit
+    mode = (body.mode or "").strip()
+    limit = int(body.limit or 0)
+    emails = [str(x).strip() for x in (body.emails or []) if str(x).strip()]
+
+    script = APP_HOME / "scripts" / "import_to_grok2api.py"
+    if not script.is_file():
+        # inline runner via python -c is brittle; write lightweight script if missing
+        raise HTTPException(500, f"import script missing: {script}")
+    cmd = [
+        sys.executable,
+        "-u",
+        str(script),
+        "--config",
+        str(resolve_config_path()),
+        "--accounts",
+        str(resolve_accounts_path()),
+        "--cpa-dir",
+        str(resolve_cpa_dir()),
+        "--limit",
+        str(limit),
+    ]
+    if mode:
+        cmd.extend(["--mode", mode])
+    if emails:
+        # pass via temp file to avoid huge argv
+        tmp = DATA_DIR / "grok2api_import_emails.txt"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp.write_text("\n".join(emails) + "\n", encoding="utf-8")
+        cmd.extend(["--emails-file", str(tmp)])
+    jobs.start("grok2api_import", cmd)
+    return {"ok": True, "job": jobs.status()}
+
+
 @app.get("/api/local-turnstile/status")
 def api_local_turnstile_status(request: Request):
     """Health-check optional local Turnstile solver (default off)."""
@@ -1774,6 +1878,7 @@ def api_config_get(request: Request, redact: bool = True):
         "proxy",
         "cpa_proxy",
         "grok2api_remote_app_key",
+        "grok2api_admin_password",
         "cpa_management_key",
     }
     out = {}

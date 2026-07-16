@@ -219,3 +219,9 @@ grok_reg/
 - 后台 **账号管理 → 测活 CPA 池**：批量探测 xai-*.json，进度在实时日志，可点 **停止**。硬失败（401/403）是否删除跟随「不可用自动删除」。
 - **本地过盾回退**（默认关）：仅当 mint 浏览器登录页 Turnstile 卡住时，可外接兼容 YesCaptcha 的本地 solver（如 Camoufox http://127.0.0.1:5072）。不改变主注册浏览器流程。
 
+## Grok2API 导入
+
+- 后台 **账号管理 → Grok2API 导入**：批量把 `accounts_cli.txt` 中的 SSO 导入 Grok2API。
+- 默认模式 `tokens_add`：兼容本项目原有 `POST {base}/tokens/add?app_key=`。
+- 可选 `admin_web_sso` / `admin_cpa`：兼容部分 admin 登录版 Grok2API（`/api/admin/v1/...`）。
+- 在 **系统设置 → Grok2API 导入配置** 填写地址与密钥，可先点「测试连接」。

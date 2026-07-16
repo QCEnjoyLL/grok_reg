@@ -277,6 +277,7 @@
         <div class="card-head">
           <h2>账号列表</h2>
           <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-import-grok2api" class="btn primary sm" title="把账号列表中的 SSO 批量导入到 Grok2API（需先在设置里配置）">Grok2API 导入</button>
             <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
             <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
             <button type="button" id="btn-archive-accounts" class="btn ghost sm" title="先补生成缺失 CPA，再把 accounts_cli.txt 按日期备份并清空">归档账号</button>
@@ -411,7 +412,66 @@
       </div>
 
 
-            <div class="card wide">
+            
+      <div class="card wide">
+        <div class="card-head">
+          <h2>Grok2API 导入配置</h2>
+        </div>
+        <p class="hint">把 <code>accounts_cli.txt</code> 里的 SSO 批量导入 Grok2API。默认模式兼容本项目已有的 <code>/tokens/add?app_key=</code> 接口；若你的 Grok2API 是 admin 登录版，可改用 admin 模式。注册成功后的「自动入池」仍由下方开关控制。</p>
+        <form id="form-grok2api" class="form">
+          <div class="quick-grid cpa-grid">
+            <label>
+              <span class="field-title"><span class="field-name">注册后自动远端入池</span><code class="field-key">grok2api_auto_add_remote</code></span>
+              <select id="q-grok2api_auto_add_remote">
+                <option value="false" selected>false (关)</option>
+                <option value="true">true (开)</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">池名</span><code class="field-key">grok2api_pool_name</code></span>
+              <select id="q-grok2api_pool_name">
+                <option value="ssoBasic" selected>ssoBasic</option>
+                <option value="ssoSuper">ssoSuper</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">导入模式</span><code class="field-key">grok2api_import_mode</code></span>
+              <select id="q-grok2api_import_mode">
+                <option value="tokens_add" selected>tokens_add（app_key 池）</option>
+                <option value="admin_web_sso">admin_web_sso（登录+SSO 文本）</option>
+                <option value="admin_cpa">admin_cpa（登录+ xai JSON）</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Grok2API 地址</span><code class="field-key">grok2api_remote_base</code></span>
+              <input type="text" id="q-grok2api_remote_base" placeholder="http://127.0.0.1:8000/admin/api 或 http://host:port" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">app_key</span><code class="field-key">grok2api_remote_app_key</code></span>
+              <input type="password" id="q-grok2api_remote_app_key" placeholder="tokens/add 模式用" autocomplete="off" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Admin 用户名</span><code class="field-key">grok2api_admin_username</code></span>
+              <input type="text" id="q-grok2api_admin_username" placeholder="admin（admin 模式）" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Admin 密码</span><code class="field-key">grok2api_admin_password</code></span>
+              <input type="password" id="q-grok2api_admin_password" placeholder="admin 模式登录密码" autocomplete="off" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">批量大小</span><code class="field-key">grok2api_import_batch_size</code></span>
+              <input type="number" id="q-grok2api_import_batch_size" min="1" max="200" value="50" />
+            </label>
+          </div>
+          <div class="row card-actions form-actions">
+            <button id="btn-test-grok2api" class="btn ghost" type="button">测试连接</button>
+            <button id="btn-save-grok2api" class="btn primary" type="button">保存 Grok2API</button>
+          </div>
+        </form>
+      </div>
+
+
+<div class="card wide">
         <div class="card-head">
           <h2>CPA / Grok 4.5 配置</h2>
         </div>
