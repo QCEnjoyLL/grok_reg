@@ -1,14 +1,13 @@
-﻿"""Bulk import SSO accounts into Grok2API pools.
+"""Bulk import into chenyme/grok2api (and legacy tokens/add pools).
 
-Supports two remote styles:
-1) classic grok2api admin API (this project default):
-     POST {base}/tokens/add?app_key=...  pool=basic|super
-2) optional lite-style admin (login + multipart):
-     POST {base}/api/admin/v1/auth/login
-     POST {base}/api/admin/v1/accounts/web/import   (SSO txt)
-     POST {base}/api/admin/v1/accounts/import       (CPA xai json)
+chenyme/grok2api (Go, recommended):
+  POST {base}/api/admin/v1/auth/login
+  POST {base}/api/admin/v1/accounts/web/import      # Grok Web SSO txt/json
+  POST {base}/api/admin/v1/accounts/import          # Grok Build OAuth JSON
+  POST {base}/api/admin/v1/accounts/console/import  # Grok Console SSO
 
-Does not change registration flow; used by dashboard manual import.
+Legacy classic pool (optional):
+  POST {base}/tokens/add?app_key=...
 """
 
 from __future__ import annotations
@@ -28,6 +27,24 @@ def _noop(_: str) -> None:
     return None
 
 
+def normalize_base_url(raw: str) -> str:
+    """Normalize user input to origin root (no trailing slash)."""
+    s = (raw or "").strip().rstrip("/")
+    if not s:
+        return ""
+    # Allow pasting full admin prefix
+    for suffix in (
+        "/api/admin/v1",
+        "/api/admin",
+        "/admin/api",
+        "/admin",
+    ):
+        if s.lower().endswith(suffix):
+            s = s[: -len(suffix)].rstrip("/")
+            break
+    return s
+
+
 def _normalize_sso(raw: str) -> str:
     token = str(raw or "").strip()
     if token.lower().startswith("sso="):
@@ -35,7 +52,12 @@ def _normalize_sso(raw: str) -> str:
     return token.strip().strip('"').strip("'")
 
 
-def _load_accounts(path: Path, *, emails: set[str] | None = None, require_sso: bool = True) -> list[dict[str, str]]:
+def _load_accounts(
+    path: Path,
+    *,
+    emails: set[str] | None = None,
+    require_sso: bool = True,
+) -> list[dict[str, str]]:
     if not path.is_file():
         return []
     out: list[dict[str, str]] = []
@@ -65,8 +87,49 @@ def _load_accounts(path: Path, *, emails: set[str] | None = None, require_sso: b
 
 
 def _pool_remote_name(pool_name: str) -> str:
-    m = {"ssobasic": "basic", "basic": "basic", "ssosuper": "super", "super": "super"}
+    m = {
+        "ssobasic": "basic",
+        "basic": "basic",
+        "ssosuper": "super",
+        "super": "super",
+    }
     return m.get(str(pool_name or "").strip().lower(), "basic")
+
+
+def _http_raw(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    body: dict | list | None = None,
+    data: bytes | None = None,
+    timeout: float = 30.0,
+    query: dict[str, str] | None = None,
+) -> tuple[int, str, dict[str, str]]:
+    if query:
+        q = urllib.parse.urlencode(query)
+        url = url + ("&" if "?" in url else "?") + q
+    raw_body = data
+    hdrs = {
+        "Accept": "application/json, text/event-stream, */*",
+        "User-Agent": "grok-reg/grok2api-import",
+    }
+    if headers:
+        hdrs.update(headers)
+    if body is not None:
+        raw_body = json.dumps(body).encode("utf-8")
+        hdrs.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(url, data=raw_body, headers=hdrs, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+            status = int(getattr(resp, "status", 200) or 200)
+            rh = {k.lower(): v for k, v in dict(resp.headers).items()}
+            return status, text, rh
+    except urllib.error.HTTPError as e:
+        text = e.read().decode("utf-8", errors="replace")
+        rh = {k.lower(): v for k, v in dict(e.headers or {}).items()}
+        return int(e.code), text, rh
 
 
 def _http_json(
@@ -79,31 +142,76 @@ def _http_json(
     timeout: float = 30.0,
     query: dict[str, str] | None = None,
 ) -> tuple[int, Any, str]:
-    if query:
-        q = urllib.parse.urlencode(query)
-        url = url + ("&" if "?" in url else "?") + q
-    raw_body = data
-    hdrs = {"Accept": "application/json", "User-Agent": "grok-reg/grok2api-import"}
-    if headers:
-        hdrs.update(headers)
-    if body is not None:
-        raw_body = json.dumps(body).encode("utf-8")
-        hdrs.setdefault("Content-Type", "application/json")
-    req = urllib.request.Request(url, data=raw_body, headers=hdrs, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            text = resp.read().decode("utf-8", errors="replace")
-            status = getattr(resp, "status", 200)
-    except urllib.error.HTTPError as e:
-        text = e.read().decode("utf-8", errors="replace")
-        status = e.code
+    status, text, _rh = _http_raw(
+        method,
+        url,
+        headers=headers,
+        body=body,
+        data=data,
+        timeout=timeout,
+        query=query,
+    )
     parsed: Any = None
     if text.strip():
         try:
             parsed = json.loads(text)
         except Exception:
             parsed = None
-    return int(status), parsed, text
+    return status, parsed, text
+
+
+def parse_sse_complete(text: str) -> dict[str, Any]:
+    """Parse chenyme grok2api SSE import stream; return complete payload."""
+    event = "message"
+    data_lines: list[str] = []
+    complete: dict[str, Any] = {}
+    errors: list[str] = []
+
+    def dispatch() -> None:
+        nonlocal event, data_lines, complete
+        if not data_lines:
+            event = "message"
+            return
+        raw = "\n".join(data_lines).strip()
+        data_lines = []
+        payload: Any
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception:
+            payload = {"raw": raw[:500]}
+        if event == "error":
+            if isinstance(payload, dict):
+                errors.append(str(payload.get("message") or payload.get("error") or payload)[:300])
+            else:
+                errors.append(str(payload)[:300])
+        if event == "complete" and isinstance(payload, dict):
+            complete = payload
+        event = "message"
+
+    for line in (text or "").splitlines():
+        if not line.strip():
+            dispatch()
+            continue
+        if line.startswith("event:"):
+            event = line[6:].strip() or "message"
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    dispatch()
+    if complete:
+        out = dict(complete)
+        if errors:
+            out["stream_errors"] = errors[:10]
+        return out
+    if errors:
+        return {"ok": False, "error": errors[0], "stream_errors": errors[:10]}
+    # not SSE — try plain JSON
+    try:
+        j = json.loads(text)
+        if isinstance(j, dict):
+            return j
+    except Exception:
+        pass
+    return {"raw": (text or "")[:500]}
 
 
 def import_sso_via_tokens_add(
@@ -116,19 +224,21 @@ def import_sso_via_tokens_add(
     log: LogFn | None = None,
     stop_event=None,
 ) -> dict[str, Any]:
-    """Classic grok2api: POST /tokens/add with app_key."""
     log = log or _noop
-    base = (base_url or "").strip().rstrip("/")
+    base = normalize_base_url(base_url)
     key = (app_key or "").strip()
     if not base or not key:
-        return {"ok": False, "error": "未配置 grok2api_remote_base / grok2api_remote_app_key"}
+        return {
+            "ok": False,
+            "error": "未配置 grok2api_remote_base / grok2api_remote_app_key（旧版 tokens_add 模式）",
+        }
     if not accounts:
         return {"ok": False, "error": "没有可导入的 SSO 账号", "imported": 0}
 
     remote_pool = _pool_remote_name(pool_name)
     batch_size = max(1, min(200, int(batch_size or 50)))
-    tokens = []
-    meta = []
+    tokens: list[str] = []
+    meta: list[str] = []
     seen: set[str] = set()
     for a in accounts:
         sso = _normalize_sso(a.get("sso") or "")
@@ -147,45 +257,25 @@ def import_sso_via_tokens_add(
         chunk = tokens[i : i + batch_size]
         emails = meta[i : i + batch_size]
         batches += 1
-        payload = {
-            "tokens": chunk,
-            "pool": remote_pool,
-            "tags": ["grok-reg-import"],
-        }
-        # also send structured entries when supported
-        payload["items"] = [
-            {"token": t, "tags": ["grok-reg-import"], "note": em}
-            for t, em in zip(chunk, emails)
-        ]
-        status, parsed, text = _http_json(
+        status, _parsed, text = _http_json(
             "POST",
             f"{base}/tokens/add",
-            body=payload,
+            body={"tokens": chunk, "pool": remote_pool, "tags": ["grok-reg-import"]},
             query={"app_key": key, "auto_nsfw": "true"},
             timeout=60.0,
         )
         if status >= 400:
-            # fallback without items
-            status2, parsed2, text2 = _http_json(
-                "POST",
-                f"{base}/tokens/add",
-                body={"tokens": chunk, "pool": remote_pool, "tags": ["grok-reg-import"]},
-                query={"app_key": key, "auto_nsfw": "true"},
-                timeout=60.0,
+            failed.append(
+                {
+                    "batch": batches,
+                    "count": len(chunk),
+                    "status": status,
+                    "error": text[:300],
+                    "emails": emails[:20],
+                }
             )
-            if status2 >= 400:
-                failed.append(
-                    {
-                        "batch": batches,
-                        "count": len(chunk),
-                        "status": status2,
-                        "error": (text2 or text)[:300],
-                        "emails": emails[:20],
-                    }
-                )
-                log(f"[g2a] batch {batches} failed HTTP {status2}: {(text2 or text)[:120]}")
-                continue
-            status, parsed, text = status2, parsed2, text2
+            log(f"[g2a] batch {batches} failed HTTP {status}: {text[:120]}")
+            continue
         imported += len(chunk)
         log(f"[g2a] batch {batches} ok +{len(chunk)} pool={pool_name}/{remote_pool}")
 
@@ -203,14 +293,20 @@ def import_sso_via_tokens_add(
     }
 
 
-def grok2api_admin_login(base_url: str, username: str, password: str, *, timeout: float = 30.0) -> str:
-    base = (base_url or "").strip().rstrip("/")
+def grok2api_admin_login(
+    base_url: str,
+    username: str,
+    password: str,
+    *,
+    timeout: float = 30.0,
+) -> str:
+    base = normalize_base_url(base_url)
     user = (username or "").strip() or "admin"
     pwd = str(password or "")
     if not base:
-        raise ValueError("base_url empty")
+        raise ValueError("Grok2API 地址为空")
     if not pwd.strip() or set(pwd.strip()) == {"*"}:
-        raise ValueError("admin password empty or masked")
+        raise ValueError("Admin 密码为空或仍是脱敏掩码，请重新输入真实密码并保存")
     status, parsed, text = _http_json(
         "POST",
         f"{base}/api/admin/v1/auth/login",
@@ -218,13 +314,95 @@ def grok2api_admin_login(base_url: str, username: str, password: str, *, timeout
         timeout=timeout,
     )
     if status >= 400:
-        raise RuntimeError(f"login HTTP {status}: {text[:300]}")
+        raise RuntimeError(f"登录失败 HTTP {status}: {text[:300]}")
     token = ""
     if isinstance(parsed, dict):
         token = str((((parsed.get("data") or {}).get("tokens") or {}).get("accessToken")) or "")
+        if not token:
+            token = str((parsed.get("tokens") or {}).get("accessToken") or "")
     if not token:
-        raise RuntimeError("login ok but no accessToken")
+        raise RuntimeError("登录成功但响应里没有 accessToken")
     return token
+
+
+def _multipart_files(parts: list[tuple[str, bytes, str]], boundary: str) -> bytes:
+    chunks: list[bytes] = []
+    for filename, data, content_type in parts:
+        chunks.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="files"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+            + data
+            + b"\r\n"
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks)
+
+
+def _admin_import_documents(
+    *,
+    base_url: str,
+    username: str,
+    password: str,
+    path: str,
+    parts: list[tuple[str, bytes, str]],
+    mode: str,
+    log: LogFn,
+    timeout: float = 300.0,
+) -> dict[str, Any]:
+    if not parts:
+        return {"ok": False, "error": "没有可导入的文件", "mode": mode, "imported": 0}
+    base = normalize_base_url(base_url)
+    token = grok2api_admin_login(base, username, password)
+    boundary = f"----grok-reg-{mode}-{int(time.time())}"
+    body = _multipart_files(parts, boundary)
+    status, text, headers = _http_raw(
+        "POST",
+        f"{base}{path}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "text/event-stream, application/json",
+        },
+        data=body,
+        timeout=timeout,
+    )
+    if status >= 400:
+        return {
+            "ok": False,
+            "error": f"{path} HTTP {status}: {text[:300]}",
+            "mode": mode,
+            "imported": 0,
+            "base_url": base,
+        }
+    complete = parse_sse_complete(text)
+    created = int(complete.get("created") or complete.get("Created") or 0)
+    updated = int(complete.get("updated") or complete.get("Updated") or 0)
+    skipped = int(complete.get("skipped") or complete.get("Skipped") or 0)
+    # success if SSE complete without fatal error, even when created=0 (all updated)
+    ok = "error" not in complete or complete.get("ok") is not False
+    if complete.get("error") and created == 0 and updated == 0:
+        ok = False
+    imported = created + updated
+    log(
+        f"[g2a] {mode} done HTTP {status} created={created} updated={updated} "
+        f"skipped={skipped} ct={headers.get('content-type', '')[:40]}"
+    )
+    return {
+        "ok": ok if imported > 0 or (status < 400 and not complete.get("error")) else False,
+        "mode": mode,
+        "base_url": base,
+        "path": path,
+        "files": len(parts),
+        "imported": imported,
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "response": complete,
+        "error": None if ok else str(complete.get("error") or complete.get("message") or "import failed"),
+    }
 
 
 def import_sso_via_admin_web(
@@ -235,9 +413,8 @@ def import_sso_via_admin_web(
     password: str,
     log: LogFn | None = None,
 ) -> dict[str, Any]:
-    """Lite-style: multipart SSO txt to /api/admin/v1/accounts/web/import."""
     log = log or _noop
-    lines = []
+    lines: list[str] = []
     seen: set[str] = set()
     for a in accounts:
         sso = _normalize_sso(a.get("sso") or "")
@@ -245,38 +422,55 @@ def import_sso_via_admin_web(
             seen.add(sso)
             lines.append(sso)
     if not lines:
-        return {"ok": False, "error": "没有可导入的 SSO", "imported": 0}
-    token = grok2api_admin_login(base_url, username, password)
-    boundary = f"----grok-reg-sso-{int(time.time())}"
-    filename = f"grok-reg-sso-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+        return {"ok": False, "error": "没有可导入的 SSO", "imported": 0, "mode": "admin_web_sso"}
+    filename = f"grok-reg-web-sso-{time.strftime('%Y%m%d-%H%M%S')}.txt"
     payload = ("\n".join(lines) + "\n").encode("utf-8")
-    body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-        f"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-    ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    base = base_url.rstrip("/")
-    status, parsed, text = _http_json(
-        "POST",
-        f"{base}/api/admin/v1/accounts/web/import",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-        data=body,
-        timeout=120.0,
+    result = _admin_import_documents(
+        base_url=base_url,
+        username=username,
+        password=password,
+        path="/api/admin/v1/accounts/web/import",
+        parts=[(filename, payload, "text/plain; charset=utf-8")],
+        mode="admin_web_sso",
+        log=log,
+        timeout=180.0,
     )
-    if status >= 400:
-        return {"ok": False, "error": f"web/import HTTP {status}: {text[:300]}", "imported": 0, "mode": "admin_web_sso"}
-    log(f"[g2a] admin web/import ok sso={len(lines)}")
-    return {
-        "ok": True,
-        "mode": "admin_web_sso",
-        "imported": len(lines),
-        "total_sso": len(lines),
-        "base_url": base,
-        "response": parsed if isinstance(parsed, dict) else {"raw": text[:500]},
-    }
+    result["total_sso"] = len(lines)
+    return result
+
+
+def import_sso_via_admin_console(
+    accounts: list[dict[str, str]],
+    *,
+    base_url: str,
+    username: str,
+    password: str,
+    log: LogFn | None = None,
+) -> dict[str, Any]:
+    log = log or _noop
+    lines: list[str] = []
+    seen: set[str] = set()
+    for a in accounts:
+        sso = _normalize_sso(a.get("sso") or "")
+        if sso and sso not in seen:
+            seen.add(sso)
+            lines.append(sso)
+    if not lines:
+        return {"ok": False, "error": "没有可导入的 SSO", "imported": 0, "mode": "admin_console_sso"}
+    filename = f"grok-reg-console-sso-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+    payload = ("\n".join(lines) + "\n").encode("utf-8")
+    result = _admin_import_documents(
+        base_url=base_url,
+        username=username,
+        password=password,
+        path="/api/admin/v1/accounts/console/import",
+        parts=[(filename, payload, "text/plain; charset=utf-8")],
+        mode="admin_console_sso",
+        log=log,
+        timeout=180.0,
+    )
+    result["total_sso"] = len(lines)
+    return result
 
 
 def import_cpa_files_via_admin(
@@ -287,63 +481,51 @@ def import_cpa_files_via_admin(
     password: str,
     log: LogFn | None = None,
 ) -> dict[str, Any]:
-    """Lite-style: multipart xai-*.json to /api/admin/v1/accounts/import."""
     log = log or _noop
     paths = [Path(p) for p in files if Path(p).is_file()]
     if not paths:
-        return {"ok": False, "error": "没有可导入的 CPA 文件", "files": 0}
-    token = grok2api_admin_login(base_url, username, password)
-    boundary = f"----grok-reg-cpa-{int(time.time())}"
-    chunks: list[bytes] = []
-    for p in paths:
-        data = p.read_bytes()
-        name = p.name
-        part = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="files"; filename="{name}"\r\n'
-            f"Content-Type: application/json\r\n\r\n"
-        ).encode("utf-8") + data + b"\r\n"
-        chunks.append(part)
-    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
-    body = b"".join(chunks)
-    base = base_url.rstrip("/")
-    status, parsed, text = _http_json(
-        "POST",
-        f"{base}/api/admin/v1/accounts/import",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-        data=body,
-        timeout=300.0,
+        return {"ok": False, "error": "没有可导入的 CPA 文件", "files": 0, "mode": "admin_cpa"}
+    parts = [(p.name, p.read_bytes(), "application/json") for p in paths]
+    return _admin_import_documents(
+        base_url=base_url,
+        username=username,
+        password=password,
+        path="/api/admin/v1/accounts/import",
+        parts=parts,
+        mode="admin_cpa",
+        log=log,
+        timeout=600.0,
     )
-    if status >= 400:
-        return {"ok": False, "error": f"accounts/import HTTP {status}: {text[:300]}", "files": 0, "mode": "admin_cpa"}
-    log(f"[g2a] admin accounts/import ok files={len(paths)}")
-    return {
-        "ok": True,
-        "mode": "admin_cpa",
-        "files": len(paths),
-        "base_url": base,
-        "response": parsed if isinstance(parsed, dict) else {"raw": text[:500]},
-    }
 
 
 def resolve_import_mode(cfg: dict[str, Any]) -> str:
-    """tokens_add | admin_web_sso | admin_cpa."""
     mode = str(cfg.get("grok2api_import_mode") or cfg.get("grok2api_upload_mode") or "").strip().lower()
-    if mode in {"tokens_add", "sso_pool", "pool", "app_key"}:
-        return "tokens_add"
-    if mode in {"admin_web_sso", "web_sso", "sso"}:
-        return "admin_web_sso"
-    if mode in {"admin_cpa", "build_auth_files", "cpa", "auth_files"}:
-        return "admin_cpa"
-    # auto: prefer app_key classic if configured
-    if str(cfg.get("grok2api_remote_app_key") or "").strip() and str(cfg.get("grok2api_remote_base") or "").strip():
-        return "tokens_add"
+    aliases = {
+        "tokens_add": "tokens_add",
+        "sso_pool": "tokens_add",
+        "pool": "tokens_add",
+        "app_key": "tokens_add",
+        "admin_web_sso": "admin_web_sso",
+        "web_sso": "admin_web_sso",
+        "sso": "admin_web_sso",
+        "web": "admin_web_sso",
+        "admin_console_sso": "admin_console_sso",
+        "console_sso": "admin_console_sso",
+        "console": "admin_console_sso",
+        "admin_cpa": "admin_cpa",
+        "build_auth_files": "admin_cpa",
+        "cpa": "admin_cpa",
+        "auth_files": "admin_cpa",
+        "build": "admin_cpa",
+    }
+    if mode in aliases:
+        return aliases[mode]
+    # Prefer chenyme admin if password configured
     if str(cfg.get("grok2api_admin_password") or cfg.get("grok2api_password") or "").strip():
         return "admin_web_sso"
-    return "tokens_add"
+    if str(cfg.get("grok2api_remote_app_key") or "").strip():
+        return "tokens_add"
+    return "admin_web_sso"
 
 
 def import_from_config(
@@ -360,8 +542,11 @@ def import_from_config(
     log = log or _noop
     cfg = cfg or {}
     mode = (mode or resolve_import_mode(cfg)).strip().lower()
+    # normalize aliases again
+    mode = resolve_import_mode({**cfg, "grok2api_import_mode": mode})
     wanted = {e.strip().lower() for e in (emails or []) if str(e).strip()} or None
-    accs = _load_accounts(Path(accounts_file), emails=wanted, require_sso=(mode != "admin_cpa"))
+    require_sso = mode != "admin_cpa"
+    accs = _load_accounts(Path(accounts_file), emails=wanted, require_sso=require_sso)
     if limit and limit > 0:
         accs = accs[:limit]
     log(f"[g2a] import mode={mode} accounts={len(accs)}")
@@ -383,7 +568,8 @@ def import_from_config(
 
     if mode == "admin_web_sso":
         return import_sso_via_admin_web(accs, base_url=base, username=user, password=pwd, log=log)
-
+    if mode == "admin_console_sso":
+        return import_sso_via_admin_console(accs, base_url=base, username=user, password=pwd, log=log)
     if mode == "admin_cpa":
         d = Path(cpa_dir or cfg.get("cpa_auth_dir") or "./cpa_auths")
         files = sorted(d.glob("xai-*.json")) if d.is_dir() else []

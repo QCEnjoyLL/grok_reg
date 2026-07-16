@@ -215,6 +215,14 @@
     setVal("q-grok2api_admin_username", cfg.grok2api_admin_username || "admin");
     setVal("q-grok2api_admin_password", cfg.grok2api_admin_password || "");
     setVal("q-grok2api_import_batch_size", String(cfg.grok2api_import_batch_size || 50));
+    setVal("g2a-base", cfg.grok2api_remote_base || "");
+    setVal("g2a-user", cfg.grok2api_admin_username || "admin");
+    setVal("g2a-pass", cfg.grok2api_admin_password || "");
+    setVal("g2a-mode", cfg.grok2api_import_mode || "admin_web_sso");
+    setVal("g2a-appkey", cfg.grok2api_remote_app_key || "");
+    setVal("g2a-pool", cfg.grok2api_pool_name || "ssoBasic");
+    setVal("g2a-auto", String(!!cfg.grok2api_auto_add_remote));
+    setVal("g2a-limit", "0");
     setVal("q-cloudmail_url", cfg.cloudmail_url || "");
     setVal("q-cloudmail_admin_email", cfg.cloudmail_admin_email || "");
     setVal("q-cloudmail_password", cfg.cloudmail_password || "");
@@ -247,7 +255,7 @@
       local_turnstile_url: getVal("q-local_turnstile_url") || "http://127.0.0.1:5072",
       grok2api_auto_add_remote: bool(getVal("q-grok2api_auto_add_remote") || "false"),
       grok2api_pool_name: getVal("q-grok2api_pool_name") || "ssoBasic",
-      grok2api_import_mode: getVal("q-grok2api_import_mode") || "tokens_add",
+      grok2api_import_mode: getVal("q-grok2api_import_mode") || getVal("g2a-mode") || "admin_web_sso",
       grok2api_remote_base: getVal("q-grok2api_remote_base") || "",
       grok2api_admin_username: getVal("q-grok2api_admin_username") || "admin",
       grok2api_import_batch_size: Number(getVal("q-grok2api_import_batch_size") || 50),
@@ -911,73 +919,132 @@
   }
 
   
+  
   function collectGrok2ApiPatch() {
-    const patch = collectQuickConfig();
+    // Prefer dedicated panel fields when present; fall back to settings form.
+    const base = getVal("g2a-base") || getVal("q-grok2api_remote_base") || "";
+    const user = getVal("g2a-user") || getVal("q-grok2api_admin_username") || "admin";
+    const mode = getVal("g2a-mode") || getVal("q-grok2api_import_mode") || "admin_web_sso";
+    const pool = getVal("g2a-pool") || getVal("q-grok2api_pool_name") || "ssoBasic";
+    const auto = (getVal("g2a-auto") || getVal("q-grok2api_auto_add_remote") || "false") === "true";
     const out = {
-      grok2api_auto_add_remote: patch.grok2api_auto_add_remote,
-      grok2api_pool_name: patch.grok2api_pool_name,
-      grok2api_import_mode: patch.grok2api_import_mode,
-      grok2api_remote_base: patch.grok2api_remote_base,
-      grok2api_admin_username: patch.grok2api_admin_username,
-      grok2api_import_batch_size: patch.grok2api_import_batch_size,
+      grok2api_auto_add_remote: auto,
+      grok2api_pool_name: pool,
+      grok2api_import_mode: mode,
+      grok2api_remote_base: base,
+      grok2api_admin_username: user,
+      grok2api_import_batch_size: Number(getVal("q-grok2api_import_batch_size") || 50),
     };
-    if (patch.grok2api_remote_app_key) out.grok2api_remote_app_key = patch.grok2api_remote_app_key;
-    if (patch.grok2api_admin_password) out.grok2api_admin_password = patch.grok2api_admin_password;
+    const pass = getVal("g2a-pass") || getVal("q-grok2api_admin_password") || "";
+    if (pass && !pass.includes("*")) out.grok2api_admin_password = pass;
+    const appkey = getVal("g2a-appkey") || getVal("q-grok2api_remote_app_key") || "";
+    if (appkey && !appkey.includes("*")) out.grok2api_remote_app_key = appkey;
     return out;
   }
 
+  function setG2aStatus(text, ok) {
+    const el = document.getElementById("g2a-status-line");
+    if (!el) return;
+    el.textContent = text || "-";
+    el.style.color = ok === true ? "var(--ok)" : (ok === false ? "var(--danger)" : "var(--muted)");
+  }
+
+  async function saveGrok2ApiConfig(silent) {
+    const patch = collectGrok2ApiPatch();
+    await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
+    // keep settings form in sync
+    setVal("q-grok2api_remote_base", patch.grok2api_remote_base || "");
+    setVal("q-grok2api_admin_username", patch.grok2api_admin_username || "admin");
+    setVal("q-grok2api_import_mode", patch.grok2api_import_mode || "admin_web_sso");
+    setVal("q-grok2api_pool_name", patch.grok2api_pool_name || "ssoBasic");
+    setVal("q-grok2api_auto_add_remote", String(!!patch.grok2api_auto_add_remote));
+    if (!silent) toastSave(__S.g2a_saved || "Grok2API 配置已保存", true);
+    await refreshConfig();
+    return patch;
+  }
+
+  async function testGrok2Api() {
+    await saveGrok2ApiConfig(true);
+    const mode = getVal("g2a-mode") || getVal("q-grok2api_import_mode") || "admin_web_sso";
+    const res = await api("/api/grok2api/test", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+      timeoutMs: 20000,
+    });
+    const msg = "连接成功 · mode=" + (res.mode || mode) + " · " + (res.base_url || "");
+    setG2aStatus(msg, true);
+    toast(msg, "ok");
+    return res;
+  }
+
+  async function startGrok2ApiImport(mode) {
+    await saveGrok2ApiConfig(true);
+    const limit = Number(getVal("g2a-limit") || 0);
+    const m = mode || getVal("g2a-mode") || "admin_web_sso";
+    const label = ({
+      admin_web_sso: "Web SSO",
+      admin_console_sso: "Console SSO",
+      admin_cpa: "Build CPA",
+      tokens_add: "旧版 tokens_add",
+    })[m] || m;
+    const ok = confirm(
+      "确认导入到 Grok2API？\n\n" +
+      "目标: " + label + "\n" +
+      "数量限制: " + (limit > 0 ? limit : "全部") + "\n" +
+      "进度看实时日志，可点停止。"
+    );
+    if (!ok) return null;
+    toast("[ui] 启动 Grok2API 导入: " + label);
+    setG2aStatus("导入任务启动中 · " + label + " ...");
+    const res = await api("/api/grok2api/import", {
+      method: "POST",
+      body: JSON.stringify({ mode: m, limit: limit || 0 }),
+      timeoutMs: 15000,
+    });
+    toast((__S.g2a_started || "Grok2API 导入已启动") + " pid=" + ((res.job && res.job.pid) || "?"));
+    setG2aStatus("导入运行中 · " + label + " · 见实时日志", true);
+    refreshStatus();
+    return res;
+  }
+
+  document.getElementById("btn-g2a-save")?.addEventListener("click", async () => {
+    try { await saveGrok2ApiConfig(false); }
+    catch (err) { toastSave((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), false); }
+  });
   document.getElementById("btn-save-grok2api")?.addEventListener("click", async () => {
-    try {
-      const patch = collectGrok2ApiPatch();
-      await api("/api/config", { method: "PUT", body: JSON.stringify({ config: patch }) });
-      toastSave(__S.g2a_saved || "Grok2API 配置已保存", true);
-      await refreshConfig();
-    } catch (err) {
-      toastSave((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), false);
+    try { await saveGrok2ApiConfig(false); }
+    catch (err) { toastSave((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), false); }
+  });
+  document.getElementById("btn-g2a-test")?.addEventListener("click", async () => {
+    try { await testGrok2Api(); }
+    catch (err) {
+      setG2aStatus("连接失败: " + (err.message || err), false);
+      toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err");
     }
   });
-
   document.getElementById("btn-test-grok2api")?.addEventListener("click", async () => {
-    try {
-      try {
-        await api("/api/config", { method: "PUT", body: JSON.stringify({ config: collectGrok2ApiPatch() }) });
-      } catch (_) {}
-      const mode = getVal("q-grok2api_import_mode") || "tokens_add";
-      const res = await api("/api/grok2api/test", {
-        method: "POST",
-        body: JSON.stringify({ mode }),
-        timeoutMs: 20000,
-      });
-      toast("Grok2API 连接成功 mode=" + (res.mode || mode) + " base=" + (res.base_url || ""), "ok");
-    } catch (err) {
-      toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err");
-    }
+    try { await testGrok2Api(); }
+    catch (err) { toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err"); }
   });
-
+  document.getElementById("btn-g2a-import-web")?.addEventListener("click", async () => {
+    try { await startGrok2ApiImport("admin_web_sso"); }
+    catch (err) { toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err"); }
+  });
+  document.getElementById("btn-g2a-import-console")?.addEventListener("click", async () => {
+    try { await startGrok2ApiImport("admin_console_sso"); }
+    catch (err) { toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err"); }
+  });
+  document.getElementById("btn-g2a-import-build")?.addEventListener("click", async () => {
+    try { await startGrok2ApiImport("admin_cpa"); }
+    catch (err) { toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err"); }
+  });
+  // legacy single import button if still present
   document.getElementById("btn-import-grok2api")?.addEventListener("click", async () => {
-    const btn = document.getElementById("btn-import-grok2api");
-    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "导入中..."; }
     try {
-      const mode = getVal("q-grok2api_import_mode") || "tokens_add";
-      const ok = confirm(
-        "确认把当前账号列表中的 SSO 导入 Grok2API？\n\n" +
-        "模式: " + mode + "\n" +
-        "请先在「系统设置 → Grok2API 导入配置」填好地址/密钥。\n" +
-        "进度看实时日志，可点停止。"
-      );
-      if (!ok) return;
-      toast("[ui] 启动 Grok2API 导入 ...");
-      const res = await api("/api/grok2api/import", {
-        method: "POST",
-        body: JSON.stringify({ mode, limit: 0 }),
-        timeoutMs: 15000,
-      });
-      toast((__S.g2a_started || "Grok2API 导入已启动") + " pid=" + ((res.job && res.job.pid) || "?"));
-      refreshStatus();
+      const mode = getVal("g2a-mode") || getVal("q-grok2api_import_mode") || "admin_web_sso";
+      await startGrok2ApiImport(mode);
     } catch (err) {
       toast((__S.g2a_fail || "Grok2API 操作失败") + ": " + (err.message || err), "err");
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "Grok2API 导入"; }
     }
   });
 

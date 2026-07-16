@@ -277,7 +277,6 @@
         <div class="card-head">
           <h2>账号列表</h2>
           <div class="row" style="gap:8px;flex-wrap:wrap;">
-            <button type="button" id="btn-import-grok2api" class="btn primary sm" title="把账号列表中的 SSO 批量导入到 Grok2API（需先在设置里配置）">Grok2API 导入</button>
             <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
             <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
             <button type="button" id="btn-archive-accounts" class="btn ghost sm" title="先补生成缺失 CPA，再把 accounts_cli.txt 按日期备份并清空">归档账号</button>
@@ -328,6 +327,75 @@
             <button type="button" class="btn ghost sm" id="accounts-next" disabled>下一页</button>
           </div>
         </div>
+      </div>
+
+
+
+      <div class="card wide" id="grok2api-panel">
+        <div class="card-head">
+          <h2>Grok2API 对接</h2>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-g2a-test" class="btn ghost sm">测试连接</button>
+            <button type="button" id="btn-g2a-save" class="btn ghost sm">保存配置</button>
+            <button type="button" id="btn-g2a-import-web" class="btn primary sm" title="导入 accounts_cli.txt 中的 SSO 到 Grok Web 池">导入 Web SSO</button>
+            <button type="button" id="btn-g2a-import-console" class="btn ghost sm" title="导入 SSO 到 Grok Console 池">导入 Console SSO</button>
+            <button type="button" id="btn-g2a-import-build" class="btn ghost sm" title="导入 xai-*.json 到 Grok Build 池">导入 Build CPA</button>
+          </div>
+        </div>
+        <p class="hint">
+          对接 <strong>chenyme/grok2api</strong>（Go 版）：管理员登录后走
+          <code>/api/admin/v1/accounts/web|console|import</code>。
+          地址填根地址即可（如 <code>http://127.0.0.1:8000</code>），不必带 <code>/api/admin</code>。
+          导入进度看左侧/侧栏实时日志，可点顶部「停止」。
+        </p>
+        <form id="form-g2a-panel" class="form" onsubmit="return false;">
+          <div class="quick-grid cpa-grid">
+            <label>
+              <span class="field-title"><span class="field-name">Grok2API 地址</span><code class="field-key">grok2api_remote_base</code></span>
+              <input type="text" id="g2a-base" placeholder="http://127.0.0.1:端口" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Admin 用户名</span><code class="field-key">grok2api_admin_username</code></span>
+              <input type="text" id="g2a-user" placeholder="admin" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Admin 密码</span><code class="field-key">grok2api_admin_password</code></span>
+              <input type="password" id="g2a-pass" placeholder="管理后台密码" autocomplete="off" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">默认导入目标</span><code class="field-key">grok2api_import_mode</code></span>
+              <select id="g2a-mode">
+                <option value="admin_web_sso" selected>Grok Web（SSO 文本）</option>
+                <option value="admin_console_sso">Grok Console（SSO 文本）</option>
+                <option value="admin_cpa">Grok Build（xai-*.json）</option>
+                <option value="tokens_add">旧版 tokens_add（app_key）</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">旧版 app_key</span><code class="field-key">grok2api_remote_app_key</code></span>
+              <input type="password" id="g2a-appkey" placeholder="仅 tokens_add 模式需要" autocomplete="off" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">旧版池名</span><code class="field-key">grok2api_pool_name</code></span>
+              <select id="g2a-pool">
+                <option value="ssoBasic" selected>ssoBasic</option>
+                <option value="ssoSuper">ssoSuper</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">数量限制</span><code class="field-key">limit</code></span>
+              <input type="number" id="g2a-limit" min="0" max="10000" value="0" title="0=全部" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">注册后自动远端入池</span><code class="field-key">grok2api_auto_add_remote</code></span>
+              <select id="g2a-auto">
+                <option value="false" selected>false（关）</option>
+                <option value="true">true（开，旧 tokens 接口）</option>
+              </select>
+            </label>
+          </div>
+          <div class="filter-stats" id="g2a-status-line" style="margin-top:10px;">未检测连接</div>
+        </form>
       </div>
 
 
@@ -417,7 +485,7 @@
         <div class="card-head">
           <h2>Grok2API 导入配置</h2>
         </div>
-        <p class="hint">把 <code>accounts_cli.txt</code> 里的 SSO 批量导入 Grok2API。默认模式兼容本项目已有的 <code>/tokens/add?app_key=</code> 接口；若你的 Grok2API 是 admin 登录版，可改用 admin 模式。注册成功后的「自动入池」仍由下方开关控制。</p>
+        <p class="hint">完整配置项（与「账号管理 → Grok2API 对接」同步）。推荐对接 <strong>chenyme/grok2api</strong>：Admin 登录 + Web/Console/Build 导入。日常操作请到账号管理页的对接卡片。</p>
         <form id="form-grok2api" class="form">
           <div class="quick-grid cpa-grid">
             <label>
@@ -437,9 +505,10 @@
             <label>
               <span class="field-title"><span class="field-name">导入模式</span><code class="field-key">grok2api_import_mode</code></span>
               <select id="q-grok2api_import_mode">
-                <option value="tokens_add" selected>tokens_add（app_key 池）</option>
-                <option value="admin_web_sso">admin_web_sso（登录+SSO 文本）</option>
-                <option value="admin_cpa">admin_cpa（登录+ xai JSON）</option>
+                <option value="admin_web_sso" selected>admin_web_sso（chenyme Web SSO）</option>
+                <option value="admin_console_sso">admin_console_sso（chenyme Console）</option>
+                <option value="admin_cpa">admin_cpa（chenyme Build JSON）</option>
+                <option value="tokens_add">tokens_add（旧版 app_key）</option>
               </select>
             </label>
             <label>

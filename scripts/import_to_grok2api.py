@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """CLI job: import accounts SSO/CPA into Grok2API (used by dashboard)."""
 
 from __future__ import annotations
