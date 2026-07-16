@@ -8,31 +8,57 @@
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css?v={{ build }}" />
 </head>
-<body>
+<body class="app-body">
   <div id="toast-host" aria-live="polite"></div>
-  <div class="layout">
-    <header class="top">
-      <div class="brand">
-        <img class="logo-img" src="/static/logo.svg" width="44" height="44" alt="Grok Register" />
-        <div>
-          <h1>{{ title }}</h1>
-          <p class="sub">Docker / Chromium / Xvfb / noVNC / CPA OIDC</p>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <img class="logo-img" src="/static/logo.svg" width="36" height="36" alt="Grok Register" />
+        <div class="sidebar-brand-text">
+          <div class="sidebar-title">Grok注册机</div>
+          <div class="sidebar-sub">注册 / 账号 / 设置</div>
         </div>
       </div>
-      <div class="top-actions">
-        <a class="btn ghost repo-link" href="https://github.com/QCEnjoyLL/grok_reg" target="_blank" rel="noopener noreferrer" title="GitHub 项目地址">项目地址</a>
-        <span id="build-badge" class="badge idle" title="build">build {{ build }}</span>
-        <span id="run-badge" class="badge idle">空闲</span>
-        <button id="btn-refresh" class="btn ghost" type="button">刷新状态</button>
-        <button id="btn-logout" class="btn ghost" type="button">退出</button>
+      <nav class="sidebar-nav" aria-label="主导航">
+        <button type="button" class="nav-item active" data-page="register" id="nav-register">
+          <span class="nav-dot"></span><span>注册</span>
+        </button>
+        <button type="button" class="nav-item" data-page="accounts" id="nav-accounts">
+          <span class="nav-dot"></span><span>账号池</span>
+        </button>
+        <button type="button" class="nav-item" data-page="settings" id="nav-settings">
+          <span class="nav-dot"></span><span>设置</span>
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <a class="btn ghost sm sidebar-link" href="https://github.com/QCEnjoyLL/grok_reg" target="_blank" rel="noopener noreferrer">项目地址</a>
+        <button type="button" id="btn-logout" class="btn ghost sm">退出登录</button>
       </div>
-    </header>
+    </aside>
 
-    <div id="setup-hints" class="hints" hidden></div>
+    <div class="main-wrap">
+      <header class="main-top">
+        <div class="main-top-left">
+          <h1 id="page-title">注册</h1>
+          <p class="sub" id="page-sub">邮箱、代理、注册任务与实时日志</p>
+        </div>
+        <div class="top-actions">
+          <span id="build-badge" class="badge idle" title="build">build {{ build }}</span>
+          <span id="run-badge" class="badge idle">空闲</span>
+          <button id="btn-refresh" class="btn ghost" type="button">刷新状态</button>
+        </div>
+      </header>
 
-    <section class="grid">
+      <div id="setup-hints" class="hints" hidden></div>
+
+      <main class="main-content">
+
+        <section class="page page-register active" data-page="register" id="page-register">
+          <div class="page-split">
+            <div class="page-col page-col-main">
+              <div class="grid page-grid">
       <div class="card">
-        <h2>概览</h2>
+        <h2>运行概览</h2>
         <div class="stats">
           <div><label>账号</label><strong id="st-accounts">-</strong></div>
           <div><label>CPA 文件</label><strong id="st-cpa">-</strong></div>
@@ -47,32 +73,10 @@
         </div>
       </div>
 
-      <div class="card">
-        <h2>系统设置</h2>
-        <form id="form-settings" class="form">
-          <label>访问 Token（登录密码，留空不改）
-            <input type="password" name="web_token" id="set-token" placeholder="输入新 Token 以修改" autocomplete="new-password" />
-          </label>
-          <p class="hint">当前 Token 提示：<code id="token-hint">-</code></p>
-          <label>noVNC 完整 URL（优先）
-            <input type="text" name="novnc_public_url" id="set-novnc-url" placeholder="http://IP:6089/vnc.html?autoconnect=1&amp;resize=scale" />
-          </label>
-          <label>或 Host + 端口
-            <div class="row">
-              <input type="text" name="novnc_host" id="set-novnc-host" placeholder="IP/域名" style="flex:2" />
-              <input type="text" name="novnc_port" id="set-novnc-port" placeholder="6089" style="flex:1" />
-            </div>
-          </label>
-          <p class="hint">解析结果：<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
-          <div class="row card-actions form-actions">
-            <button type="submit" class="btn primary">保存设置</button>
-          </div>
-        </form>
-      </div>
 
       <div class="card wide">
         <div class="card-head">
-          <h2>开始前填这些</h2>
+          <h2>邮箱与代理</h2>
         </div>
         <p class="hint" id="quick-mail-hint">选择邮箱渠道后，下方只显示该渠道需要的配置项。</p>
                 <form id="form-quick" class="form">
@@ -179,6 +183,233 @@
       </div>
 
       
+
+<div class="card task-card">
+        <div class="card-head">
+          <h2>注册任务</h2>
+        </div>
+        <p class="hint">按需设置数量与并发；快速模式会压缩等待间隔。</p>
+        <form id="form-register" class="form">
+          <div class="quick-grid task-grid">
+            <label>
+              <span class="field-title"><span class="field-name">再注册数量</span><code class="field-key">--extra</code></span>
+              <input type="number" name="extra" value="1" min="1" max="500" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">注册线程</span><code class="field-key">--threads</code></span>
+              <input type="number" name="threads" value="1" min="1" max="10" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">Mint 并发</span><code class="field-key">mint_workers</code></span>
+              <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">快速模式</span><code class="field-key">fast</code></span>
+              <span class="check-inline"><input type="checkbox" name="fast" checked /> 开启后缩短等待</span>
+            </label>
+          </div>
+          <div class="row card-actions form-actions">
+            <button type="submit" class="btn primary">开始注册</button>
+            <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
+            <button type="button" id="btn-stop" class="btn danger">停止</button>
+          </div>
+        </form>
+      </div>
+
+
+      <div class="card task-card" id="backfill-box">
+        <div class="card-head">
+          <h2>补认证 Backfill</h2>
+        </div>
+        <p class="hint">一般用下方「为缺失账号生成 CPA」；这里可指定数量、邮箱与超时。</p>
+        <form id="form-backfill" class="form">
+          <div class="quick-grid task-grid">
+            <label>
+              <span class="field-title"><span class="field-name">补生成数量</span><code class="field-key">limit</code></span>
+              <input type="number" name="limit" value="1" min="0" max="5000" />
+            </label>
+            <label>
+              <span class="field-title"><span class="field-name">超时秒数</span><code class="field-key">timeout</code></span>
+              <input type="number" name="timeout" value="300" min="30" />
+            </label>
+            <label class="field-full">
+              <span class="field-title"><span class="field-name">指定邮箱</span><code class="field-key">email</code></span>
+              <input type="text" name="email" placeholder="user@domain（可选，留空=按缺失列表）" />
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">探测模型</span><code class="field-key">probe</code></span>
+              <span class="check-inline"><input type="checkbox" name="probe" checked /> 探测 free build / grok-4.5</span>
+            </label>
+            <label class="check-card">
+              <span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">headless</code></span>
+              <span class="check-inline"><input type="checkbox" name="headless" /> 不推荐（Docker 建议有头）</span>
+            </label>
+          </div>
+          <div class="row card-actions form-actions">
+            <button type="submit" class="btn primary">开始 Backfill</button>
+          </div>
+        </form>
+      </div>
+
+
+              </div>
+            </div>
+            <div class="page-col page-col-side">
+      <div class="card wide log-side-card">
+        <div class="card-head">
+          <h2>实时日志</h2>
+          <div class="row" style="gap:8px;">
+            <button id="btn-copy-log" class="btn ghost sm" type="button">复制日志</button>
+            <button id="btn-clear-log" class="btn ghost sm" type="button">清屏</button>
+          </div>
+        </div>
+        <pre id="log" class="log"></pre>
+      </div>
+
+
+            </div>
+          </div>
+        </section>
+
+        <section class="page page-accounts" data-page="accounts" id="page-accounts" hidden>
+          <div class="grid page-grid">
+      <div class="card wide">
+        <div class="card-head">
+          <h2>账号列表</h2>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
+            <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
+            <button type="button" id="btn-archive-accounts" class="btn ghost sm" title="先补生成缺失 CPA，再把 accounts_cli.txt 按日期备份并清空">归档账号</button>
+            <a class="btn ghost sm" href="/api/download/accounts-archive" id="link-accounts-archive">下载归档账号</a>
+          </div>
+        </div>
+        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。归档会先补生成缺失 CPA，再把 <code>accounts_cli.txt</code> 备份到 <code>accounts_cli_backup/</code> 并清空当前列表。</p>
+        <div class="filter-bar" id="accounts-filter-bar">
+          <label class="filter-item">
+            <span class="filter-label">SSO</span>
+            <select id="accounts-filter-sso">
+              <option value="all" selected>全部</option>
+              <option value="yes">有 SSO</option>
+              <option value="no">无 SSO</option>
+            </select>
+          </label>
+          <label class="filter-item">
+            <span class="filter-label">CPA 文件</span>
+            <select id="accounts-filter-cpa">
+              <option value="all" selected>全部</option>
+              <option value="missing">缺失 CPA</option>
+              <option value="has">已有 CPA</option>
+            </select>
+          </label>
+          <label class="filter-item filter-grow">
+            <span class="filter-label">搜索邮箱</span>
+            <input type="text" id="accounts-filter-q" placeholder="例如 piv.de5.net 或 9xj3..." />
+          </label>
+          <div class="filter-stats" id="accounts-filter-stats">-</div>
+        </div>
+        <div id="accounts-table" class="table-wrap">加载中...</div>
+        <div class="pager" id="accounts-pager" data-kind="accounts">
+          <div class="pager-left">
+            <span class="pager-info" id="accounts-pager-info">-</span>
+          </div>
+          <div class="pager-right">
+            <label class="pager-size">每页
+              <select id="accounts-page-size">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost sm" id="accounts-prev" disabled>上一页</button>
+            <button type="button" class="btn ghost sm" id="accounts-next" disabled>下一页</button>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="card wide">
+        <div class="card-head">
+          <h2>CPA 文件</h2>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-cpa-upload-pending" class="btn ghost sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
+            <button type="button" id="btn-cpa-upload-all" class="btn ghost sm" title="强制重新上传当前目录全部 CPA 文件">全部重传</button>
+            <button type="button" id="btn-archive-cpa" class="btn ghost sm" title="把当前 cpa_auths 中的 xai-*.json 全部移入备份目录">归档 CPA</button>
+            <button type="button" id="btn-cleanup-cpa-logs" class="btn ghost sm" title="清理 backfill 摘要/失败日志等运行时文件；可选重置上传状态账本。不会删除 xai-*.json">清理日志</button>
+            <a class="btn ghost sm" href="/api/download/cpa" id="link-cpa-2">下载全部 zip</a>
+            <a class="btn ghost sm" href="/api/download/cpa-archive" id="link-cpa-archive">下载归档 CPA</a>
+            <button type="button" id="btn-refresh-cpa" class="btn ghost sm">刷新</button>
+          </div>
+        </div>
+        <div class="filter-bar" id="cpa-filter-bar">
+          <label class="filter-item">
+            <span class="filter-label">上传状态</span>
+            <select id="cpa-filter-status">
+              <option value="all" selected>全部</option>
+              <option value="uploaded">已上传 CPAMC</option>
+              <option value="pending">未上传</option>
+            </select>
+          </label>
+          <label class="filter-item filter-grow">
+            <span class="filter-label">搜索邮箱/文件名</span>
+            <input type="text" id="cpa-filter-q" placeholder="例如 temps.cc.cd 或 xai-..." />
+          </label>
+          <div class="filter-stats" id="cpa-filter-stats">-</div>
+        </div>
+        <div id="cpa-table" class="table-wrap">加载中...</div>
+        <div class="pager" id="cpa-pager" data-kind="cpa">
+          <div class="pager-left">
+            <span class="pager-info" id="cpa-pager-info">-</span>
+          </div>
+          <div class="pager-right">
+            <label class="pager-size">每页
+              <select id="cpa-page-size">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost sm" id="cpa-prev" disabled>上一页</button>
+            <button type="button" class="btn ghost sm" id="cpa-next" disabled>下一页</button>
+          </div>
+        </div>
+      </div>
+
+
+          </div>
+        </section>
+
+        <section class="page page-settings" data-page="settings" id="page-settings" hidden>
+          <div class="grid page-grid">
+      <div class="card">
+        <h2>系统设置</h2>
+        <form id="form-settings" class="form">
+          <label>访问 Token（登录密码，留空不改）
+            <input type="password" name="web_token" id="set-token" placeholder="输入新 Token 以修改" autocomplete="new-password" />
+          </label>
+          <p class="hint">当前 Token 提示：<code id="token-hint">-</code></p>
+          <label>noVNC 完整 URL（优先）
+            <input type="text" name="novnc_public_url" id="set-novnc-url" placeholder="http://IP:6089/vnc.html?autoconnect=1&amp;resize=scale" />
+          </label>
+          <label>或 Host + 端口
+            <div class="row">
+              <input type="text" name="novnc_host" id="set-novnc-host" placeholder="IP/域名" style="flex:2" />
+              <input type="text" name="novnc_port" id="set-novnc-port" placeholder="6089" style="flex:1" />
+            </div>
+          </label>
+          <p class="hint">解析结果：<a id="novnc-preview" href="#" target="_blank" rel="noopener">-</a></p>
+          <div class="row card-actions form-actions">
+            <button type="submit" class="btn primary">保存设置</button>
+          </div>
+        </form>
+      </div>
+
+
             <div class="card wide">
         <div class="card-head">
           <h2>CPA / Grok 4.5 配置</h2>
@@ -249,188 +480,6 @@
         </form>
       </div>
 
-<div class="card task-card">
-        <div class="card-head">
-          <h2>注册任务</h2>
-        </div>
-        <p class="hint">按需设置数量与并发；快速模式会压缩等待间隔。</p>
-        <form id="form-register" class="form">
-          <div class="quick-grid task-grid">
-            <label>
-              <span class="field-title"><span class="field-name">再注册数量</span><code class="field-key">--extra</code></span>
-              <input type="number" name="extra" value="1" min="1" max="500" />
-            </label>
-            <label>
-              <span class="field-title"><span class="field-name">注册线程</span><code class="field-key">--threads</code></span>
-              <input type="number" name="threads" value="1" min="1" max="10" />
-            </label>
-            <label>
-              <span class="field-title"><span class="field-name">Mint 并发</span><code class="field-key">mint_workers</code></span>
-              <input type="number" name="mint_workers" value="-1" min="-1" max="10" />
-            </label>
-            <label class="check-card">
-              <span class="field-title"><span class="field-name">快速模式</span><code class="field-key">fast</code></span>
-              <span class="check-inline"><input type="checkbox" name="fast" checked /> 开启后缩短等待</span>
-            </label>
-          </div>
-          <div class="row card-actions form-actions">
-            <button type="submit" class="btn primary">开始注册</button>
-            <button type="button" id="btn-emergency-start" class="btn ghost">应急启动</button>
-            <button type="button" id="btn-stop" class="btn danger">停止</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="card task-card" id="backfill-box">
-        <div class="card-head">
-          <h2>补认证 Backfill</h2>
-        </div>
-        <p class="hint">一般用下方「为缺失账号生成 CPA」；这里可指定数量、邮箱与超时。</p>
-        <form id="form-backfill" class="form">
-          <div class="quick-grid task-grid">
-            <label>
-              <span class="field-title"><span class="field-name">补生成数量</span><code class="field-key">limit</code></span>
-              <input type="number" name="limit" value="1" min="0" max="5000" />
-            </label>
-            <label>
-              <span class="field-title"><span class="field-name">超时秒数</span><code class="field-key">timeout</code></span>
-              <input type="number" name="timeout" value="300" min="30" />
-            </label>
-            <label class="field-full">
-              <span class="field-title"><span class="field-name">指定邮箱</span><code class="field-key">email</code></span>
-              <input type="text" name="email" placeholder="user@domain（可选，留空=按缺失列表）" />
-            </label>
-            <label class="check-card">
-              <span class="field-title"><span class="field-name">探测模型</span><code class="field-key">probe</code></span>
-              <span class="check-inline"><input type="checkbox" name="probe" checked /> 探测 free build / grok-4.5</span>
-            </label>
-            <label class="check-card">
-              <span class="field-title"><span class="field-name">无头浏览器</span><code class="field-key">headless</code></span>
-              <span class="check-inline"><input type="checkbox" name="headless" /> 不推荐（Docker 建议有头）</span>
-            </label>
-          </div>
-          <div class="row card-actions form-actions">
-            <button type="submit" class="btn primary">开始 Backfill</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="card wide">
-        <div class="card-head">
-          <h2>实时日志</h2>
-          <div class="row" style="gap:8px;">
-            <button id="btn-copy-log" class="btn ghost sm" type="button">复制日志</button>
-            <button id="btn-clear-log" class="btn ghost sm" type="button">清屏</button>
-          </div>
-        </div>
-        <pre id="log" class="log"></pre>
-      </div>
-
-      <div class="card wide">
-        <div class="card-head">
-          <h2>最近账号 / 补生成 CPA</h2>
-          <div class="row" style="gap:8px;flex-wrap:wrap;">
-            <button type="button" id="btn-gen-cpa-missing" class="btn primary sm">为缺失账号生成 CPA</button>
-            <button type="button" id="btn-gen-cpa-one" class="btn ghost sm">仅生成列表第一个缺失</button>
-            <button type="button" id="btn-archive-accounts" class="btn ghost sm" title="先补生成缺失 CPA，再把 accounts_cli.txt 按日期备份并清空">归档账号</button>
-            <a class="btn ghost sm" href="/api/download/accounts-archive" id="link-accounts-archive">下载归档账号</a>
-          </div>
-        </div>
-        <p class="hint">注册成功但没有 <code>xai-*.json</code> 时点这里。账号行含 SSO 时优先纯 HTTP 生成 CPA（无需浏览器/Turnstile）；SSO 失效才回退密码登录（可能要过 Cloudflare，建议打开 noVNC）。请先打开「是否生成 CPA」并保存。归档会先补生成缺失 CPA，再把 <code>accounts_cli.txt</code> 备份到 <code>accounts_cli_backup/</code> 并清空当前列表。</p>
-        <div class="filter-bar" id="accounts-filter-bar">
-          <label class="filter-item">
-            <span class="filter-label">SSO</span>
-            <select id="accounts-filter-sso">
-              <option value="all" selected>全部</option>
-              <option value="yes">有 SSO</option>
-              <option value="no">无 SSO</option>
-            </select>
-          </label>
-          <label class="filter-item">
-            <span class="filter-label">CPA 文件</span>
-            <select id="accounts-filter-cpa">
-              <option value="all" selected>全部</option>
-              <option value="missing">缺失 CPA</option>
-              <option value="has">已有 CPA</option>
-            </select>
-          </label>
-          <label class="filter-item filter-grow">
-            <span class="filter-label">搜索邮箱</span>
-            <input type="text" id="accounts-filter-q" placeholder="例如 piv.de5.net 或 9xj3..." />
-          </label>
-          <div class="filter-stats" id="accounts-filter-stats">-</div>
-        </div>
-        <div id="accounts-table" class="table-wrap">加载中...</div>
-        <div class="pager" id="accounts-pager" data-kind="accounts">
-          <div class="pager-left">
-            <span class="pager-info" id="accounts-pager-info">-</span>
-          </div>
-          <div class="pager-right">
-            <label class="pager-size">每页
-              <select id="accounts-page-size">
-                <option value="5">5</option>
-                <option value="10" selected>10</option>
-                <option value="20">20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="500">500</option>
-              </select>
-            </label>
-            <button type="button" class="btn ghost sm" id="accounts-prev" disabled>上一页</button>
-            <button type="button" class="btn ghost sm" id="accounts-next" disabled>下一页</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card wide">
-        <div class="card-head">
-          <h2>CPA 文件</h2>
-          <div class="row" style="gap:8px;flex-wrap:wrap;">
-            <button type="button" id="btn-cpa-upload-pending" class="btn ghost sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
-            <button type="button" id="btn-cpa-upload-all" class="btn ghost sm" title="强制重新上传当前目录全部 CPA 文件">全部重传</button>
-            <button type="button" id="btn-archive-cpa" class="btn ghost sm" title="把当前 cpa_auths 中的 xai-*.json 全部移入备份目录">归档 CPA</button>
-            <button type="button" id="btn-cleanup-cpa-logs" class="btn ghost sm" title="清理 backfill 摘要/失败日志等运行时文件；可选重置上传状态账本。不会删除 xai-*.json">清理日志</button>
-            <a class="btn ghost sm" href="/api/download/cpa" id="link-cpa-2">下载全部 zip</a>
-            <a class="btn ghost sm" href="/api/download/cpa-archive" id="link-cpa-archive">下载归档 CPA</a>
-            <button type="button" id="btn-refresh-cpa" class="btn ghost sm">刷新</button>
-          </div>
-        </div>
-        <div class="filter-bar" id="cpa-filter-bar">
-          <label class="filter-item">
-            <span class="filter-label">上传状态</span>
-            <select id="cpa-filter-status">
-              <option value="all" selected>全部</option>
-              <option value="uploaded">已上传 CPAMC</option>
-              <option value="pending">未上传</option>
-            </select>
-          </label>
-          <label class="filter-item filter-grow">
-            <span class="filter-label">搜索邮箱/文件名</span>
-            <input type="text" id="cpa-filter-q" placeholder="例如 temps.cc.cd 或 xai-..." />
-          </label>
-          <div class="filter-stats" id="cpa-filter-stats">-</div>
-        </div>
-        <div id="cpa-table" class="table-wrap">加载中...</div>
-        <div class="pager" id="cpa-pager" data-kind="cpa">
-          <div class="pager-left">
-            <span class="pager-info" id="cpa-pager-info">-</span>
-          </div>
-          <div class="pager-right">
-            <label class="pager-size">每页
-              <select id="cpa-page-size">
-                <option value="5">5</option>
-                <option value="10" selected>10</option>
-                <option value="20">20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="500">500</option>
-              </select>
-            </label>
-            <button type="button" class="btn ghost sm" id="cpa-prev" disabled>上一页</button>
-            <button type="button" class="btn ghost sm" id="cpa-next" disabled>下一页</button>
-          </div>
-        </div>
-      </div>
 
       <div class="card wide">
         <details class="advanced fold-card" id="json-box">
@@ -442,7 +491,12 @@
           </div>
         </details>
       </div>
-    </section>
+
+          </div>
+        </section>
+
+      </main>
+    </div>
   </div>
   <button type="button" id="btn-back-top" class="back-top" title="回到顶部" aria-label="回到顶部" hidden>↑</button>
   <script>

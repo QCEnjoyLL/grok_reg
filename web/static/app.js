@@ -1435,6 +1435,57 @@
     }
   });
 
+
+  const PAGE_META = {
+    register: { title: "注册", sub: "邮箱、代理、注册任务与实时日志" },
+    accounts: { title: "账号池", sub: "本地账号、CPA 文件、归档与补生成" },
+    settings: { title: "设置", sub: "系统、CPA 对接与完整配置" },
+  };
+  function switchPage(name, pushHash) {
+    const page = PAGE_META[name] ? name : "register";
+    document.querySelectorAll(".nav-item").forEach((el) => {
+      el.classList.toggle("active", el.dataset.page === page);
+    });
+    document.querySelectorAll(".page").forEach((el) => {
+      const on = el.dataset.page === page;
+      el.classList.toggle("active", on);
+      if (on) el.removeAttribute("hidden");
+      else el.setAttribute("hidden", "");
+    });
+    const t = document.getElementById("page-title");
+    const s = document.getElementById("page-sub");
+    if (t) t.textContent = PAGE_META[page].title;
+    if (s) s.textContent = PAGE_META[page].sub;
+    if (pushHash !== false) {
+      try {
+        const h = "#/" + page;
+        if (location.hash !== h) history.replaceState(null, "", h);
+      } catch (_) {}
+    }
+    if (page === "accounts") {
+      refreshAccounts().catch(() => {});
+      refreshCpa().catch(() => {});
+    } else if (page === "settings") {
+      refreshSettings().catch(() => {});
+      refreshConfig().catch(() => {});
+    } else {
+      refreshStatus().catch(() => {});
+    }
+  }
+  function initPageNav() {
+    document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
+      btn.addEventListener("click", () => switchPage(btn.dataset.page));
+    });
+    const raw = (location.hash || "").replace(/^#\/?/, "").trim();
+    const page = PAGE_META[raw] ? raw : "register";
+    switchPage(page, false);
+    window.addEventListener("hashchange", () => {
+      const r = (location.hash || "").replace(/^#\/?/, "").trim();
+      switchPage(PAGE_META[r] ? r : "register", false);
+    });
+  }
+
+  initPageNav();
   connectWs();
   refreshBuild();
   bootstrap();
