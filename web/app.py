@@ -57,6 +57,7 @@ def _coerce_ui_bools(cfg: dict[str, Any]) -> dict[str, Any]:
         "cpa_management_upload_enabled",
         "cpa_probe_usability",
         "cpa_delete_unusable",
+        "local_turnstile_enabled",
         "resin_sticky_enabled",
         "grok2api_auto_add_local",
         "grok2api_auto_add_remote",
@@ -408,6 +409,7 @@ def list_cpa_log_files(cpa_dir: Path | None = None) -> list[dict[str, Any]]:
         if p.is_file():
             candidates.append(p)
     candidates.extend(sorted(d.glob("backfill_summary_*.json")))
+    candidates.extend(sorted(d.glob("probe_summary_*.json")))
 
     seen: set[str] = set()
     for p in candidates:
@@ -1094,6 +1096,46 @@ def _handle_task_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             cmd.extend(["--email", body.email.strip()])
         jobs.start("backfill", cmd)
         return {"ok": True, "job": jobs.status()}
+    if action in ("probe_pool", "probe-cpa", "job_probe_pool"):
+        body = ProbePoolBody(
+            limit=int(payload["limit"]) if payload.get("limit") is not None else 0,
+            email=str(payload.get("email", "") or ""),
+            workers=int(payload.get("workers", 4) or 4),
+            delete=bool(payload.get("delete", True)),
+            offset=int(payload.get("offset", 0) or 0),
+            sleep=float(payload.get("sleep", 0.0) or 0.0),
+        )
+        if jobs.is_running():
+            raise HTTPException(409, "任务运行中")
+        script = APP_HOME / "scripts" / "probe_cpa_pool.py"
+        if not script.is_file():
+            raise HTTPException(500, f"probe script missing: {script}")
+        cmd = [
+            sys.executable,
+            "-u",
+            str(script),
+            "--limit",
+            str(body.limit),
+            "--offset",
+            str(body.offset),
+            "--workers",
+            str(body.workers),
+            "--sleep",
+            str(body.sleep),
+            "--out-dir",
+            str(resolve_cpa_dir()),
+            "--config",
+            str(resolve_config_path()),
+            *_backfill_proxy_args(),
+        ]
+        # delete=True: honor config cpa_delete_unusable (script default)
+        # delete=False: force keep files
+        if not body.delete:
+            cmd.append("--no-delete")
+        if body.email.strip():
+            cmd.extend(["--email", body.email.strip()])
+        jobs.start("probe_pool", cmd)
+        return {"ok": True, "job": jobs.status()}
     if action in ("stop", "job_stop"):
         stopped = jobs.stop()
         return {"ok": True, "stopped": stopped, "job": jobs.status()}
@@ -1687,6 +1729,32 @@ def api_cpa_mark(request: Request, body: CpaMarkBody):
         results.append({"file": safe, "ok": True, "uploaded": bool(body.uploaded)})
     return {"ok": True, "results": results}
 
+
+@app.get("/api/local-turnstile/status")
+def api_local_turnstile_status(request: Request):
+    """Health-check optional local Turnstile solver (default off)."""
+    require_auth(request)
+    cfg = load_config_dict()
+    enabled = bool(cfg.get("local_turnstile_enabled", False))
+    base = str(cfg.get("local_turnstile_url") or cfg.get("local_solver_url") or "http://127.0.0.1:5072").strip()
+    out: dict[str, Any] = {
+        "enabled": enabled,
+        "base_url": base,
+        "ok": False,
+    }
+    if not enabled:
+        out["note"] = "disabled in config (local_turnstile_enabled=false)"
+        return out
+    try:
+        from cpa_xai.local_turnstile import solver_health
+
+        h = solver_health(base, timeout=3.0)
+        out.update(h)
+    except Exception as e:  # noqa: BLE001
+        out["error"] = str(e)
+    return out
+
+
 @app.get("/api/config")
 def api_config_get(request: Request, redact: bool = True):
     require_auth(request)
@@ -1826,6 +1894,18 @@ def _start_register_job(body: RegisterBody) -> dict:
     return {"ok": True, "job": jobs.status()}
 
 
+
+class ProbePoolBody(BaseModel):
+    """Batch probe existing CPA pool (stoppable via /api/jobs/stop)."""
+
+    limit: int = Field(0, ge=0, le=10000)
+    email: str = ""
+    workers: int = Field(4, ge=1, le=32)
+    delete: bool = True
+    offset: int = Field(0, ge=0, le=100000)
+    sleep: float = Field(0.0, ge=0, le=30)
+
+
 class TaskBody(BaseModel):
     action: str = "start"
     extra: int = Field(1, ge=1, le=500)
@@ -1900,6 +1980,23 @@ def api_job_backfill(body: BackfillBody, request: Request):
         cmd.extend(["--email", body.email.strip()])
     jobs.start("backfill", cmd)
     return {"ok": True, "job": jobs.status()}
+
+
+@app.post("/api/jobs/probe-pool")
+def api_job_probe_pool(body: ProbePoolBody, request: Request):
+    """Start stoppable CPA pool usability probe (progress in job logs)."""
+    require_auth(request)
+    return enqueue_job_request(
+        "probe_pool",
+        {
+            "limit": body.limit,
+            "email": body.email,
+            "workers": body.workers,
+            "delete": body.delete,
+            "offset": body.offset,
+            "sleep": body.sleep,
+        },
+    )
 
 
 @app.post("/api/jobs/stop")

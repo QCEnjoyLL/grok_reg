@@ -334,6 +334,7 @@
         <div class="card-head">
           <h2>CPA 文件</h2>
           <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button type="button" id="btn-probe-cpa-pool" class="btn primary sm" title="批量测活 CPA 池：可停止，进度看实时日志；硬失败(401/403)可按配置删除">测活 CPA 池</button>
             <button type="button" id="btn-cpa-upload-pending" class="btn ghost sm" title="上传所有未标记为已上传的 CPA 文件到 CPAMC">上传未上传</button>
             <button type="button" id="btn-cpa-upload-all" class="btn ghost sm" title="强制重新上传当前目录全部 CPA 文件">全部重传</button>
             <button type="button" id="btn-archive-cpa" class="btn ghost sm" title="把当前 cpa_auths 中的 xai-*.json 全部移入备份目录">归档 CPA</button>
@@ -414,7 +415,7 @@
         <div class="card-head">
           <h2>CPA / Grok 4.5 配置</h2>
         </div>
-        <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。</p>
+        <p class="hint">注册成功后自动生成 CPA 认证文件（xai-邮箱.json）。有 SSO 时优先纯 HTTP 生成（不过登录页 Cloudflare）；失败才用浏览器。Docker 内 headless 建议 false。 「测活 CPA 池」会批量探测现有 xai-*.json，可点停止；「本地过盾」默认关，仅 mint 登录页 Turnstile 卡住时可选外接 Camoufox solver。</p>
                 <form id="form-cpa" class="form">
           <div class="quick-grid cpa-grid">
             <label>
@@ -471,6 +472,17 @@
                 <option value="true" selected>true (开，推荐)</option>
                 <option value="false">false (关)</option>
               </select>
+            </label>
+              <label>
+              <span class="field-title"><span class="field-name">本地过盾回退</span><code class="field-key">local_turnstile_enabled</code></span>
+              <select id="q-local_turnstile_enabled">
+                <option value="false" selected>关（默认）</option>
+                <option value="true">开（需本地 solver）</option>
+              </select>
+            </label>
+              <label>
+              <span class="field-title"><span class="field-name">本地过盾地址</span><code class="field-key">local_turnstile_url</code></span>
+              <input type="text" id="q-local_turnstile_url" placeholder="http://127.0.0.1:5072" />
             </label>
           </div>
         

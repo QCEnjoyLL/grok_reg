@@ -822,6 +822,93 @@ if (nodes.length && typeof nodes[0].click === 'function') nodes[0].click();
     return False
 
 
+
+
+def _try_local_turnstile_inject(page: Any, log: LogFn, *, timeout: float = 90.0) -> bool:
+    """Optional external solver fallback when page widget stalls.
+
+    Controlled by config local_turnstile_enabled + local_turnstile_url
+    (or env LOCAL_TURNSTILE_ENABLED / LOCAL_TURNSTILE_URL). Default OFF.
+    Token is session-sensitive; only used as last resort.
+    """
+    import os
+
+    enabled = (
+        os.environ.get("LOCAL_TURNSTILE_ENABLED")
+        or os.environ.get("GROK_LOCAL_TURNSTILE_ENABLED")
+        or ""
+    ).strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return False
+    cfg_enabled = False
+    base = (
+        os.environ.get("LOCAL_TURNSTILE_URL")
+        or os.environ.get("GROK_LOCAL_TURNSTILE_URL")
+        or os.environ.get("LOCAL_SOLVER_URL")
+        or ""
+    ).strip()
+    try:
+        from pathlib import Path as _Path
+        root = _Path(__file__).resolve().parents[1]
+        for cand in (
+            _Path(os.environ.get("DATA_DIR") or "") / "config.json",
+            root / "data" / "config.json",
+            root / "config.json",
+        ):
+            if not cand.is_file():
+                continue
+            import json as _json
+            raw = _json.loads(cand.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                continue
+            flag = raw.get("local_turnstile_enabled")
+            if flag is True or str(flag or "").lower() in {"1", "true", "yes", "on"}:
+                cfg_enabled = True
+            if not base:
+                base = str(raw.get("local_turnstile_url") or raw.get("local_solver_url") or "").strip()
+            break
+    except Exception:
+        pass
+    if not cfg_enabled and enabled not in {"1", "true", "yes", "on"}:
+        return False
+    if not base:
+        base = "http://127.0.0.1:5072"
+    try:
+        from .local_turnstile import (
+            inject_turnstile_token_js,
+            scrape_sitekey_from_page,
+            solve_turnstile,
+        )
+    except Exception as e:
+        log(f"local turnstile import failed: {e}")
+        return False
+    try:
+        sitekey = scrape_sitekey_from_page(page)
+        if not sitekey:
+            log("local turnstile: no sitekey on page")
+            return False
+        try:
+            website_url = str(getattr(page, "url", None) or "https://accounts.x.ai/sign-in")
+        except Exception:
+            website_url = "https://accounts.x.ai/sign-in"
+        log(f"local turnstile: solving sitekey={sitekey[:12]}... url={website_url[:60]}")
+        token = solve_turnstile(website_url, sitekey, base_url=base, timeout=timeout)
+        if not token or len(token) < 20:
+            log("local turnstile: empty token")
+            return False
+        n = 0
+        try:
+            n = page.run_js(inject_turnstile_token_js(token))
+        except Exception as e:
+            log(f"local turnstile inject js failed: {e}")
+            return False
+        log(f"local turnstile: injected fields={n} token_len={len(token)}")
+        return True
+    except Exception as e:
+        log(f"local turnstile failed: {e}")
+        return False
+
+
 def approve_device_code(
     page: Any,
     *,
@@ -1149,6 +1236,9 @@ return false;
             # Wait until Turnstile token is actually ready before Login click
             ok_ts = _wait_turnstile(page, log, 50)
             st = _cf_turnstile_state(page, "")
+            if (not ok_ts or st == "failed") and _try_local_turnstile_inject(page, log, timeout=90):
+                ok_ts = _wait_turnstile(page, log, 12)
+                st = _cf_turnstile_state(page, "")
             if st == "failed":
                 log("Cloudflare Verification failed — wait/retry before abort")
                 recovered = False

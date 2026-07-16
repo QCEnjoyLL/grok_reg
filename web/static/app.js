@@ -1,5 +1,5 @@
 (() => {
-  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "gen_cpa_started": "已开始为缺失账号生成 CPA", "gen_cpa_one": "已开始生成 CPA（1个）", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "提示", "hint_title": "提示", "run_title": "任务", "err_title": "失败", "cpa_saved": "CPA 配置已保存"};
+  const __S = window.__S = {"idle": "空闲", "running": "运行中", "ended": "结束", "precheck": "运行前检查：", "no_accounts": "暂无账号", "no_cpa": "暂无 xai-*.json", "email": "邮箱", "password": "密码", "reg_started": "注册任务已启动", "bf_started": "Backfill 已启动", "gen_cpa_started": "已开始为缺失账号生成 CPA", "gen_cpa_one": "已开始生成 CPA（1个）", "stop_req": "已请求停止", "cfg_saved": "配置已保存", "save_fail": "保存失败", "set_saved_token": "设置已保存（Token 已更新）", "set_saved": "设置已保存", "set_fail": "设置保存失败", "quick_saved": "必要配置已保存", "quick_fail": "必要配置保存失败", "save_ok_title": "保存成功", "save_fail_title": "保存失败", "ok_title": "提示", "hint_title": "提示", "run_title": "任务", "err_title": "失败", "cpa_saved": "CPA 配置已保存", "probe_started": "CPA 池测活已启动", "probe_fail": "测活启动失败"};
   function getToken() { return localStorage.getItem("web_token") || ""; }
   function setToken(t) { localStorage.setItem("web_token", t || ""); }
   function authHeaders(json = true) {
@@ -205,6 +205,8 @@
     setVal("q-cpa_management_key", cfg.cpa_management_key || "");
     setVal("q-cpa_probe_usability", String(cfg.cpa_probe_usability !== false));
     setVal("q-cpa_delete_unusable", String(cfg.cpa_delete_unusable !== false));
+    setVal("q-local_turnstile_enabled", String(!!cfg.local_turnstile_enabled));
+    setVal("q-local_turnstile_url", cfg.local_turnstile_url || "http://127.0.0.1:5072");
     setVal("q-cloudmail_url", cfg.cloudmail_url || "");
     setVal("q-cloudmail_admin_email", cfg.cloudmail_admin_email || "");
     setVal("q-cloudmail_password", cfg.cloudmail_password || "");
@@ -233,6 +235,8 @@
       cpa_management_base: getVal("q-cpa_management_base"),
       cpa_probe_usability: bool(getVal("q-cpa_probe_usability") || "true"),
       cpa_delete_unusable: bool(getVal("q-cpa_delete_unusable") || "true"),
+      local_turnstile_enabled: bool(getVal("q-local_turnstile_enabled") || "false"),
+      local_turnstile_url: getVal("q-local_turnstile_url") || "http://127.0.0.1:5072",
       cloudmail_url: getVal("q-cloudmail_url"),
       cloudmail_admin_email: getVal("q-cloudmail_admin_email"),
     };
@@ -858,7 +862,61 @@
     }
   }
 
-  document.getElementById("form-backfill").addEventListener("submit", async (e) => {
+  
+  async function startProbePool(opts = {}) {
+    const body = {
+      limit: opts.limit != null ? Number(opts.limit) : 0,
+      email: String(opts.email || ""),
+      workers: opts.workers != null ? Number(opts.workers) : 4,
+      delete: opts.delete !== false,
+      offset: opts.offset != null ? Number(opts.offset) : 0,
+      sleep: opts.sleep != null ? Number(opts.sleep) : 0,
+    };
+    // Prefer dedicated endpoint; fall back to unified task action.
+    try {
+      return await api("/api/jobs/probe-pool", {
+        method: "POST",
+        body: JSON.stringify(body),
+        timeoutMs: 15000,
+      });
+    } catch (e1) {
+      try {
+        return await api("/api/task", {
+          method: "POST",
+          body: JSON.stringify({ action: "probe_pool", ...body }),
+          timeoutMs: 15000,
+        });
+      } catch (e2) {
+        throw e1;
+      }
+    }
+  }
+
+  document.getElementById("btn-probe-cpa-pool")?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-probe-cpa-pool");
+    if (btn) { btn.disabled = true; btn.dataset.prev = btn.textContent; btn.textContent = "测活中..."; }
+    try {
+      const ok = confirm(
+        "开始测活全部 CPA 文件？\n\n" +
+        "• 可用 / 软失败：保留\n" +
+        "• 硬失败(401/403)：若设置里「不可用自动删除」为开，则删除账号+CPA\n" +
+        "• 可随时点顶部「停止」\n\n" +
+        "进度看实时日志。是否开始？"
+      );
+      if (!ok) return;
+      toast("[ui] 启动 CPA 池测活 ...");
+      const res = await startProbePool({ limit: 0, workers: 4, delete: true });
+      toast((__S.probe_started || "CPA 池测活已启动") + " pid=" + ((res.job && res.job.pid) || "?"));
+      refreshStatus();
+      setTimeout(() => { refreshCpa().catch(() => {}); refreshAccounts().catch(() => {}); }, 4000);
+    } catch (err) {
+      toast((__S.probe_fail || "测活启动失败") + ": " + (err.message || err), "err");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.prev || "测活 CPA 池"; }
+    }
+  });
+
+document.getElementById("form-backfill").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const body = {
@@ -1343,6 +1401,8 @@
         cpa_management_base: patch.cpa_management_base,
         cpa_probe_usability: patch.cpa_probe_usability,
         cpa_delete_unusable: patch.cpa_delete_unusable,
+        local_turnstile_enabled: patch.local_turnstile_enabled,
+        local_turnstile_url: patch.local_turnstile_url,
       };
       if (patch.cpa_management_key) cpaPatch.cpa_management_key = patch.cpa_management_key;
       await api("/api/config", { method: "PUT", body: JSON.stringify({ config: cpaPatch }) });
