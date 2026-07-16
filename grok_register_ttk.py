@@ -2622,35 +2622,100 @@ def _page_load_diagnostics(page):
         html = str(getattr(page, "html", "") or "")
     except Exception:
         html = ""
-    snippet = html[:800]
-    low = (title + " " + snippet + " " + url).lower()
-    if (
-        "this site can't be reached" in low
-        or "err_tunnel_connection_failed" in low
-        or "err_proxy_connection_failed" in low
-        or "err_connection_timed_out" in low
-        or "err_name_not_resolved" in low
-        or "err_connection_refused" in low
-        or "err_ssl" in low
-        or "chromium error" in low
+    try:
+        body_text = str(
+            page.run_js(
+                "return (document.body && (document.body.innerText || document.body.textContent) || '').slice(0, 500);"
+            )
+            or ""
+        )
+    except Exception:
+        body_text = ""
+    snippet = html[:1200]
+    low = (title + " " + snippet + " " + body_text + " " + url).lower()
+
+    # Chromium interstitial / network error pages often keep the target URL in
+    # the address bar and embed "sign-up" inside the failed-url string. Detect
+    # the error shell first so we never mis-label them as ok.
+    chrome_error_markers = (
+        "this site can't be reached",
+        "this site can’t be reached",
+        "err_tunnel_connection_failed",
+        "err_proxy_connection_failed",
+        "err_connection_timed_out",
+        "err_connection_reset",
+        "err_connection_closed",
+        "err_connection_aborted",
+        "err_name_not_resolved",
+        "err_connection_refused",
+        "err_ssl",
+        "err_timed_out",
+        "err_empty_response",
+        "err_http2",
+        "err_network_changed",
+        "err_socks",
+        "chromium error",
+        "chrome-error://",
+        "neterror",
+        "the chromium authors",
+        "dns_probe_finished",
+        "checking the proxy",
+        "proxy server",
+        "took too long to respond",
+        "unexpectedly closed the connection",
+        "perform a check",
+    )
+    is_chrome_shell = (
+        "the chromium authors" in low
         or "chrome-error://" in low
         or url.startswith("chrome-error://")
-        or "neterror" in low
-    ):
-        # extract error code if present
-        m = re.search(r"(ERR_[A-Z0-9_]+)", snippet + " " + title, re.I)
+        or ('name="color-scheme" content="light dark"' in low and "accounts.x.ai" in title.lower() and len(html) < 20000 and "continue-with-email" not in html)
+    )
+    if is_chrome_shell or any(m in low for m in chrome_error_markers):
+        m = re.search(r"(ERR_[A-Z0-9_]+|DNS_PROBE_[A-Z0-9_]+)", snippet + " " + title + " " + body_text, re.I)
         code = m.group(1) if m else "NETWORK_ERROR"
-        return "chrome-error", f"{code} url={url} title={title}"
-    if "accounts.x.ai" in url and (
-        "continue-with-email" in html
-        or "使用邮箱" in html
-        or "Sign up" in html
-        or "sign-up" in html
-        or 'data-testid="email"' in html
-    ):
+        return "chrome-error", f"{code} url={url} title={title} body={(body_text or '')[:120]!r}"
+
+    # Require real app UI markers. Do NOT treat path/query text like "sign-up"
+    # inside the failed URL / interstitial HTML as success.
+    ui_markers = (
+        'data-testid="continue-with-email"',
+        'data-testid="signup-with-email"',
+        'data-testid="email"',
+        "continue-with-email",
+        "signup-with-email",
+        "使用邮箱",
+        "login with email",
+        "sign up with email",
+        "create your account",
+        "don't have an account",
+        'name="email"',
+        'type="email"',
+        'autocomplete="email"',
+    )
+    html_low = html.lower()
+    body_low = body_text.lower()
+    has_ui = any(m.lower() in html_low or m.lower() in body_low for m in ui_markers)
+    # visible social/email buttons often only render after JS; accept broader labels too
+    if not has_ui and ("accounts.x.ai" in url):
+        has_ui = any(
+            x in body_low
+            for x in (
+                "login with email",
+                "sign up with email",
+                "continue with email",
+                "continue with google",
+                "login with google",
+                "sign up",
+                "create account",
+                "email",
+            )
+        ) and "the chromium authors" not in low and len(html) > 1500
+
+    if "accounts.x.ai" in url and has_ui:
         return "ok", url
     if "accounts.x.ai" in url:
-        return "unknown", f"url={url} title={title} html_len={len(html)}"
+        return "unknown", f"url={url} title={title} html_len={len(html)} body={(body_text or '')[:160]!r}"
     return "unknown", f"url={url} title={title}"
 
 
@@ -2672,7 +2737,9 @@ def click_email_signup_button(timeout=20, log_callback=None, cancel_callback=Non
                 + " 请在 VNC 中确认能否打开 https://accounts.x.ai ，并检查 config.proxy。"
             )
 
-        if log_callback:
+        now = time.time()
+        if log_callback and (now - getattr(click_email_signup_button, "_last_try", 0) >= 3):
+            click_email_signup_button._last_try = now
             log_callback("[Debug] 尝试查找邮箱注册/继续按钮...")
 
         clicked = page.run_js(r"""
@@ -2689,12 +2756,19 @@ const target = candidates.find((node) => {
   return (
     text.includes('使用邮箱注册') ||
     text.includes('使用邮箱') ||
+    text.includes('邮箱登录') ||
+    text.includes('邮箱注册') ||
     lower.includes('signupwithemail') ||
     lower.includes('continuewithemail') ||
     lower.includes('signinwithemail') ||
+    lower.includes('loginwithemail') ||
     lower.includes('sign-upwithemail') ||
+    lower.includes('sign up with email') ||
+    lower.includes('log in with email') ||
+    lower.includes('login with email') ||
+    lower.includes('continue with email') ||
     lower === 'email' ||
-    (lower.includes('email') && (lower.includes('continue') || lower.includes('sign')))
+    (lower.includes('email') && (lower.includes('continue') || lower.includes('sign') || lower.includes('log')))
   );
 });
 if (!target) return false;
@@ -2718,19 +2792,42 @@ return !!input;
                 log_callback("[*] 已在邮箱输入页，无需再点按钮")
             return True
 
-        if log_callback:
+        # reduce log spam: only every ~3s
+        now = time.time()
+        if log_callback and (now - getattr(click_email_signup_button, "_last_dbg", 0) >= 3):
+            click_email_signup_button._last_dbg = now
             current_url = page.url if page else "none"
-            log_callback(f"[Debug] 当前URL: {current_url} ({detail})")
+            try:
+                visible = page.run_js(
+                    "return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,180);"
+                ) or ""
+            except Exception:
+                visible = ""
+            log_callback(f"[Debug] 当前URL: {current_url} diag={detail} visible={visible!r}")
 
         human_sleep(1, cancel_callback)
 
-    if log_callback:
-        page_html = (page.html[:500] if page else "no page")
-        log_callback(f"[Debug] 页面内容片段: {page_html}")
-
     kind, detail = _page_load_diagnostics(page)
+    if log_callback:
+        try:
+            page_html = (page.html[:400] if page else "no page")
+        except Exception:
+            page_html = "no page"
+        try:
+            visible = page.run_js(
+                "return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,240);"
+            ) or ""
+        except Exception:
+            visible = ""
+        log_callback(f"[Debug] 页面内容片段: {page_html}")
+        log_callback(f"[Debug] 可见文本: {visible!r}")
     if kind == "chrome-error":
-        raise Exception("注册页网络错误: " + detail)
+        proxy = get_registration_proxy() or "(no proxy)"
+        raise Exception(
+            "注册页网络错误（非真实 xAI 页面）: "
+            + detail
+            + f" | proxy={proxy}。请检查代理能否 CONNECT accounts.x.ai，并在 VNC 中手动打开注册页验证。"
+        )
     raise Exception("未找到邮箱注册按钮；页面可能未正确加载: " + detail)
 
 
@@ -2744,42 +2841,80 @@ def open_signup_page(log_callback=None, cancel_callback=None):
         browser, page = start_browser()
         if log_callback:
             log_callback("[*] 浏览器已启动")
-    try:
-        page = _get_page()
-        page.get(SIGNUP_URL)
-    except Exception as e:
-        if log_callback:
-            log_callback(f"[Debug] 打开URL异常: {e}")
+
+    last_detail = ""
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        raise_if_cancelled(cancel_callback)
         try:
-            TabPool.release_tab()
             page = _get_page()
             page.get(SIGNUP_URL)
-        except Exception as e2:
+        except Exception as e:
             if log_callback:
-                log_callback(f"[Debug] 创建新标签页异常: {e2}")
-            restart_browser()
-            page = _get_page()
-            page.get(SIGNUP_URL)
-    try:
-        page.wait.doc_loaded()
-    except Exception:
-        pass
-    _inject_stealth_js(page, log_callback)
+                log_callback(f"[Debug] 打开URL异常({attempt}/{max_attempts}): {e}")
+            try:
+                TabPool.release_tab()
+                page = _get_page()
+                page.get(SIGNUP_URL)
+            except Exception as e2:
+                if log_callback:
+                    log_callback(f"[Debug] 创建新标签页异常: {e2}")
+                if attempt >= max_attempts:
+                    restart_browser()
+                    page = _get_page()
+                    page.get(SIGNUP_URL)
+                else:
+                    human_sleep(1.2, cancel_callback)
+                    continue
+        try:
+            page.wait.doc_loaded()
+        except Exception:
+            pass
+        # give SPA / interstitial a moment to settle
+        human_sleep(1.5 if attempt == 1 else 2.0, cancel_callback)
+        _inject_stealth_js(page, log_callback)
+        if log_callback:
+            log_callback(f"[*] 当前URL: {page.url}")
+        kind, detail = _page_load_diagnostics(page)
+        last_detail = detail
+        if log_callback:
+            log_callback(f"[Debug] page_diag={kind} {detail}")
+
+        if kind == "ok":
+            break
+        if kind == "chrome-error":
+            if attempt < max_attempts:
+                if log_callback:
+                    log_callback(f"[!] 注册页网络错误，刷新重试 {attempt}/{max_attempts}: {detail}")
+                try:
+                    page.refresh()
+                except Exception:
+                    pass
+                human_sleep(1.5, cancel_callback)
+                continue
+            proxy = get_registration_proxy() or "(no proxy)"
+            raise Exception(
+                "无法打开 accounts.x.ai（代理/网络失败）: "
+                + detail
+                + f" | proxy={proxy}"
+            )
+        # unknown: soft reload before giving click path a chance
+        if attempt < max_attempts:
+            if log_callback:
+                log_callback(f"[Debug] 注册页未就绪，重试加载 {attempt}/{max_attempts}")
+            try:
+                page.get(SIGNUP_URL)
+            except Exception:
+                pass
+            human_sleep(1.5, cancel_callback)
+            continue
+    else:
+        # exhausted without ok; still try button path once for SPA delay cases
+        if log_callback:
+            log_callback(f"[Debug] 注册页诊断仍非 ok，继续尝试点邮箱入口: {last_detail}")
+
     dump_state(page, "signup-loaded")
     take_screenshot(page, "signup")
-    human_sleep(2, cancel_callback)
-    if log_callback:
-        log_callback(f"[*] 当前URL: {page.url}")
-    kind, detail = _page_load_diagnostics(page)
-    if log_callback:
-        log_callback(f"[Debug] page_diag={kind} {detail}")
-    if kind == "chrome-error":
-        proxy = get_registration_proxy() or "(no proxy)"
-        raise Exception(
-            "无法打开 accounts.x.ai（代理/网络失败）: "
-            + detail
-            + f" | proxy={proxy}"
-        )
     dismiss_cookie_banner(page, log_callback)
     click_email_signup_button(
         timeout=25, log_callback=log_callback, cancel_callback=cancel_callback
