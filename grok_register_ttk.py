@@ -2799,7 +2799,7 @@ return !!input;
             current_url = page.url if page else "none"
             try:
                 visible = page.run_js(
-                    "return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,180);"
+                    r"return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,180);"
                 ) or ""
             except Exception:
                 visible = ""
@@ -2815,7 +2815,7 @@ return !!input;
             page_html = "no page"
         try:
             visible = page.run_js(
-                "return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,240);"
+                r"return (document.body && (document.body.innerText || '') || '').replace(/\s+/g,' ').trim().slice(0,240);"
             ) or ""
         except Exception:
             visible = ""
